@@ -11,6 +11,7 @@ import com.splitpay.ui.auth.RegisterScreen
 import com.splitpay.ui.home.HomeScreen
 import com.splitpay.ui.expense.AddExpenseScreen
 import com.splitpay.ui.group.GroupDetailScreen
+import com.splitpay.ui.profile.ProfileScreen
 import com.splitpay.ui.settlement.SettlementScreen
 
 @Composable
@@ -101,6 +102,18 @@ fun NavGraph(navController: NavHostController) {
             AddExpenseScreen(
                 groupId = groupId,
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // ─── Profile ────────────────────────────────────────
+        composable(Screen.Profile.route) {
+            ProfileScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onLogout = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
             )
         }
     }
