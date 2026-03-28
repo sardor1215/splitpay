@@ -9,6 +9,7 @@ import androidx.navigation.navArgument
 import com.splitpay.ui.auth.LoginScreen
 import com.splitpay.ui.auth.RegisterScreen
 import com.splitpay.ui.home.HomeScreen
+import com.splitpay.ui.group.GroupDetailScreen
 
 @Composable
 fun NavGraph(navController: NavHostController) {
@@ -65,7 +66,13 @@ fun NavGraph(navController: NavHostController) {
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) { backStackEntry ->
             val groupId = backStackEntry.arguments?.getString("groupId") ?: ""
-            // GroupDetailScreen(groupId) — sera ajouté plus tard
+            GroupDetailScreen(
+                groupId = groupId,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToAddExpense = { id ->
+                    navController.navigate(Screen.AddExpense.createRoute(id))
+                }
+            )
         }
     }
 }

@@ -60,7 +60,7 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp),
-            contentPadding = PaddingValues(top = 80.dp, bottom = 140.dp)
+            contentPadding = PaddingValues(top = 140.dp, bottom = 140.dp)
         ) {
 
             // ── Balance section ───────────────────────────────────────────
@@ -214,7 +214,13 @@ fun HomeScreen(
         // ── Bottom Navigation ─────────────────────────────────────────────
         BottomNav(
             selectedTab = selectedTab,
-            onTabSelected = { selectedTab = it },
+            onTabSelected = { index ->
+                selectedTab = index
+                when (index) {
+                    3 -> onNavigateToProfile()
+                    else -> { /* TODO: Groups, Activity screens */ }
+                }
+            },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
     }
