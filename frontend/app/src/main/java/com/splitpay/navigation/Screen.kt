@@ -23,6 +23,11 @@ sealed class Screen(val route: String) {
         fun createRoute(groupId: String) = "group/$groupId/balances"
     }
 
+    // Settlement
+    data object Settlement : Screen("group/{groupId}/settlement") {
+        fun createRoute(groupId: String) = "group/$groupId/settlement"
+    }
+
     // Profil
     data object Profile : Screen("profile")
 }

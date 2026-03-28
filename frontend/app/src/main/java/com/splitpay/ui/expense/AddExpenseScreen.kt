@@ -72,7 +72,7 @@ fun AddExpenseScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(top = 88.dp, bottom = 120.dp)
+                .padding(top = 140.dp, bottom = 120.dp)
         ) {
 
             // ── Amount input ──────────────────────────────────────────────

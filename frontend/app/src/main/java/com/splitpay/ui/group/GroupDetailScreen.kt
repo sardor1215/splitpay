@@ -47,6 +47,7 @@ fun GroupDetailScreen(
     groupId: String,
     onNavigateBack: () -> Unit,
     onNavigateToAddExpense: (String) -> Unit,
+    onNavigateToSettlement: (String) -> Unit,
     viewModel: GroupDetailViewModel = viewModel()
 ) {
     val group by viewModel.group.collectAsStateWithLifecycle()
@@ -453,7 +454,7 @@ fun GroupDetailScreen(
                                     colors = listOf(Primary, PrimaryContainer)
                                 )
                             )
-                            .clickable { }
+                            .clickable { onNavigateToSettlement(groupId) }
                             .padding(horizontal = 24.dp, vertical = 14.dp),
                         contentAlignment = Alignment.Center
                     ) {

@@ -11,6 +11,7 @@ import com.splitpay.ui.auth.RegisterScreen
 import com.splitpay.ui.home.HomeScreen
 import com.splitpay.ui.expense.AddExpenseScreen
 import com.splitpay.ui.group.GroupDetailScreen
+import com.splitpay.ui.settlement.SettlementScreen
 
 @Composable
 fun NavGraph(navController: NavHostController) {
@@ -72,7 +73,22 @@ fun NavGraph(navController: NavHostController) {
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToAddExpense = { id ->
                     navController.navigate(Screen.AddExpense.createRoute(id))
+                },
+                onNavigateToSettlement = { id ->
+                    navController.navigate(Screen.Settlement.createRoute(id))
                 }
+            )
+        }
+
+        // ─── Settlement ────────────────────────────────────
+        composable(
+            route = Screen.Settlement.route,
+            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getString("groupId") ?: ""
+            SettlementScreen(
+                groupId = groupId,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 
