@@ -151,15 +151,9 @@ fun HomeScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(SurfaceContainerLowest)
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .height(70.dp)
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Surface.copy(alpha = 0.95f),
-                            Surface.copy(alpha = 0f)
-                        )
-                    )
-                )
                 .align(Alignment.TopCenter)
         ) {
             Row(
@@ -198,7 +192,7 @@ fun HomeScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 24.dp, bottom = 88.dp)
+                .padding(end = 24.dp, bottom = 110.dp)
                 .size(60.dp)
                 .clip(RoundedCornerShape(18.dp))
                 .background(
@@ -283,10 +277,14 @@ fun GroupItem(
         group.balance < 0 -> Tertiary
         else -> OnSurfaceVariant
     }
-    val balanceText = when {
-        group.balance > 0 -> "Owed $${String.format("%.2f", group.balance)}"
-        group.balance < 0 -> "You owe $${String.format("%.2f", -group.balance)}"
-        else -> "Settled"
+    val balanceLabel = when {
+        group.balance > 0 -> "OWED"
+        group.balance < 0 -> "YOU OWE"
+        else -> "SETTLED"
+    }
+    val balanceAmount = when {
+        group.balance != 0.0 -> "$${String.format("%.2f", Math.abs(group.balance))}"
+        else -> ""
     }
 
     Box(
@@ -333,18 +331,25 @@ fun GroupItem(
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = balanceText,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = balanceColor
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
                     text = group.lastActivity.uppercase(),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = OutlineVariant,
                     letterSpacing = 0.5.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = balanceLabel,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = balanceColor,
+                    letterSpacing = 0.5.sp
+                )
+                Text(
+                    text = balanceAmount,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Black,
+                    color = balanceColor
                 )
             }
         }
@@ -423,14 +428,8 @@ fun BottomNav(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Surface.copy(alpha = 0f),
-                        Surface.copy(alpha = 0.95f)
-                    )
-                )
-            )
+            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .background(SurfaceContainerLowest)
             .padding(bottom = 12.dp, top = 8.dp)
     ) {
         Row(
