@@ -59,6 +59,62 @@ fun AddExpenseScreen(
     val paidBy       by viewModel.paidBy.collectAsStateWithLifecycle()
     val splitMode    by viewModel.splitMode.collectAsStateWithLifecycle()
     val participants by viewModel.participants.collectAsStateWithLifecycle()
+    var showPaidByDialog by remember { mutableStateOf(false) }
+
+    // ── Paid By dialog ────────────────────────────────────────────────────
+    if (showPaidByDialog) {
+        AlertDialog(
+            onDismissRequest = { showPaidByDialog = false },
+            title = {
+                Text(
+                    text = "Who paid?",
+                    fontWeight = FontWeight.Bold,
+                    color = OnSurface
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val payers = listOf("You") + participants.map { it.name }.filter { it != "You" }
+                    payers.forEach { name ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (name == paidBy) Primary.copy(alpha = 0.08f)
+                                    else Color.Transparent
+                                )
+                                .clickable {
+                                    viewModel.onPaidByChange(name)
+                                    showPaidByDialog = false
+                                }
+                                .padding(horizontal = 12.dp, vertical = 14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = name,
+                                fontSize = 15.sp,
+                                fontWeight = if (name == paidBy) FontWeight.Bold else FontWeight.Normal,
+                                color = if (name == paidBy) Primary else OnSurface
+                            )
+                            if (name == paidBy) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = Primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            containerColor = Surface,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -180,7 +236,7 @@ fun AddExpenseScreen(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(SurfaceLow)
-                    .clickable { }
+                    .clickable { showPaidByDialog = true }
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically

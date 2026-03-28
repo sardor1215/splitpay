@@ -8,6 +8,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.splitpay.ui.auth.LoginScreen
 import com.splitpay.ui.auth.RegisterScreen
+import com.splitpay.ui.groups.CreateGroupScreen
+import com.splitpay.ui.groups.GroupsScreen
 import com.splitpay.ui.home.HomeScreen
 import com.splitpay.ui.expense.AddExpenseScreen
 import com.splitpay.ui.group.GroupDetailScreen
@@ -59,7 +61,43 @@ fun NavGraph(navController: NavHostController) {
                 },
                 onNavigateToProfile = {
                     navController.navigate(Screen.Profile.route)
+                },
+                onNavigateToGroups = {
+                    navController.navigate(Screen.Groups.route)
+                },
+                onNavigateToCreateGroup = {
+                    navController.navigate(Screen.CreateGroup.route)
+                },
+                onNavigateToSettlement = { groupId ->
+                    navController.navigate(Screen.Settlement.createRoute(groupId))
                 }
+            )
+        }
+
+        // ─── Groups ─────────────────────────────────────────
+        composable(Screen.Groups.route) {
+            GroupsScreen(
+                onNavigateToHome = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                    }
+                },
+                onNavigateToGroup = { groupId ->
+                    navController.navigate(Screen.GroupDetail.createRoute(groupId))
+                },
+                onNavigateToProfile = {
+                    navController.navigate(Screen.Profile.route)
+                },
+                onNavigateToCreateGroup = {
+                    navController.navigate(Screen.CreateGroup.route)
+                }
+            )
+        }
+
+        // ─── Create Group ────────────────────────────────────
+        composable(Screen.CreateGroup.route) {
+            CreateGroupScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

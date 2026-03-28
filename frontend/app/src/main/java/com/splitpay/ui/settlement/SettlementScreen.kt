@@ -1,6 +1,7 @@
 package com.splitpay.ui.settlement
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -54,6 +55,8 @@ fun SettlementScreen(
     val totalAmount    = payments.sumOf { it.amount }
     val remainingAmount = payments.filter { !it.isConfirmed }.sumOf { it.amount }
     val pendingCount   = payments.count { !it.isConfirmed }
+
+    var selectedMethod by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(groupId) { viewModel.loadSettlement(groupId) }
 
@@ -170,13 +173,18 @@ fun SettlementScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Bank
+                val bankSelected = selectedMethod == "bank"
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(120.dp)
                         .clip(RoundedCornerShape(20.dp))
-                        .background(SurfaceLowest)
-                        .clickable { }
+                        .background(if (bankSelected) Primary.copy(alpha = 0.08f) else SurfaceLowest)
+                        .then(
+                            if (bankSelected) Modifier.border(2.dp, Primary, RoundedCornerShape(20.dp))
+                            else Modifier
+                        )
+                        .clickable { selectedMethod = if (bankSelected) null else "bank" }
                         .padding(20.dp)
                 ) {
                     Column(
@@ -193,18 +201,23 @@ fun SettlementScreen(
                             text = "Direct Bank",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = OnSurface
+                            color = if (bankSelected) Primary else OnSurface
                         )
                     }
                 }
                 // PayPal
+                val paypalSelected = selectedMethod == "paypal"
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(120.dp)
                         .clip(RoundedCornerShape(20.dp))
-                        .background(SurfaceLowest)
-                        .clickable { }
+                        .background(if (paypalSelected) Primary.copy(alpha = 0.08f) else SurfaceLowest)
+                        .then(
+                            if (paypalSelected) Modifier.border(2.dp, Primary, RoundedCornerShape(20.dp))
+                            else Modifier
+                        )
+                        .clickable { selectedMethod = if (paypalSelected) null else "paypal" }
                         .padding(20.dp)
                 ) {
                     Column(
@@ -221,7 +234,7 @@ fun SettlementScreen(
                             text = "PayPal",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = OnSurface
+                            color = if (paypalSelected) Primary else OnSurface
                         )
                     }
                 }
@@ -244,11 +257,18 @@ fun SettlementScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onNavigateBack) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable { onNavigateBack() },
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close",
-                        tint = Primary
+                        tint = Primary,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
                 Text(
@@ -258,22 +278,7 @@ fun SettlementScreen(
                     color = Primary,
                     letterSpacing = (-0.5).sp
                 )
-                // Avatar
-                Box(
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(PrimaryFixed),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Y",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Primary
-                    )
-                }
+                Spacer(modifier = Modifier.size(40.dp))
             }
         }
 

@@ -46,6 +46,10 @@ class AddExpenseViewModel : ViewModel() {
         _description.value = value
     }
 
+    fun onPaidByChange(name: String) {
+        _paidBy.value = name
+    }
+
     fun onSplitModeChange(mode: SplitMode) {
         _splitMode.value = mode
         recalculateShares()

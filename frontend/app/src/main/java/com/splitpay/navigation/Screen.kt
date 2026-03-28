@@ -8,6 +8,8 @@ sealed class Screen(val route: String) {
 
     // Principal
     data object Home : Screen("home")
+    data object Groups : Screen("groups")
+    data object CreateGroup : Screen("groups/create")
 
     data object GroupDetail : Screen("group/{groupId}") {
         fun createRoute(groupId: String) = "group/$groupId"

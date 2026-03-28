@@ -46,6 +46,9 @@ private val OutlineVariant = Color(0xFFBEC8C9)
 fun HomeScreen(
     onNavigateToGroup: (String) -> Unit,
     onNavigateToProfile: () -> Unit,
+    onNavigateToGroups: () -> Unit,
+    onNavigateToCreateGroup: () -> Unit,
+    onNavigateToSettlement: (String) -> Unit,
     homeViewModel: HomeViewModel = viewModel()
 ) {
     val groups by homeViewModel.groups.collectAsStateWithLifecycle()
@@ -119,7 +122,7 @@ fun HomeScreen(
                         fontWeight = FontWeight.Bold,
                         color = Primary
                     )
-                    TextButton(onClick = { }) {
+                    TextButton(onClick = { onNavigateToGroups() }) {
                         Text(
                             text = "View all",
                             fontSize = 13.sp,
@@ -143,7 +146,7 @@ fun HomeScreen(
             // ── Quick Settle section ──────────────────────────────────────
             item {
                 Spacer(modifier = Modifier.height(8.dp))
-                QuickSettleCard()
+                QuickSettleCard(onReviewSettle = { onNavigateToSettlement("2") })
             }
         }
 
@@ -200,7 +203,7 @@ fun HomeScreen(
                         colors = listOf(Primary, PrimaryContainer)
                     )
                 )
-                .clickable { },
+                .clickable { onNavigateToCreateGroup() },
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -217,8 +220,9 @@ fun HomeScreen(
             onTabSelected = { index ->
                 selectedTab = index
                 when (index) {
+                    1 -> onNavigateToGroups()
                     3 -> onNavigateToProfile()
-                    else -> { /* TODO: Groups, Activity screens */ }
+                    else -> { }
                 }
             },
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -364,7 +368,7 @@ fun GroupItem(
 
 // ── Quick Settle Card ─────────────────────────────────────────────────────────
 @Composable
-fun QuickSettleCard() {
+fun QuickSettleCard(onReviewSettle: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -403,7 +407,7 @@ fun QuickSettleCard() {
                             colors = listOf(Primary, PrimaryContainer)
                         )
                     )
-                    .clickable { },
+                    .clickable { onReviewSettle() },
                 contentAlignment = Alignment.Center
             ) {
                 Text(
