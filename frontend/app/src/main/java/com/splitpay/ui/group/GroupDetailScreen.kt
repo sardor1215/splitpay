@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -379,6 +380,30 @@ fun GroupDetailScreen(
                     )
                 }
             }
+        }
+
+        // ── FAB Add Expense ───────────────────────────────────────────────
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 24.dp, bottom = 110.dp)
+                .size(60.dp)
+                .shadow(elevation = 8.dp, shape = RoundedCornerShape(18.dp), spotColor = Primary.copy(alpha = 0.3f))
+                .clip(RoundedCornerShape(18.dp))
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Primary, PrimaryContainer)
+                    )
+                )
+                .clickable { onNavigateToAddExpense(groupId) },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = "Add expense",
+                tint = Color.White,
+                modifier = Modifier.size(28.dp)
+            )
         }
 
         // ── Floating Settle Up panel ──────────────────────────────────────
