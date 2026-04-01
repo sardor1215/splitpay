@@ -61,6 +61,9 @@ dependencies {
     // Tests
     testImplementation("io.ktor:ktor-server-tests-jvm:$ktor_version")
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.3.0")
+
+    implementation("io.ktor:ktor-server-status-pages:$ktor_version")
+    implementation("io.ktor:ktor-server-cors:$ktor_version")
 }
 
 tasks.withType<KotlinCompile> {
