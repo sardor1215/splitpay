@@ -31,3 +31,8 @@ google-services.json
 
 #env
 run.ps1
+
+# Logs and generated files
+backend/logs/
+backend/.kotlin/
+*.log
