@@ -7,9 +7,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,6 +23,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.data.model.Expense
 import com.splitpay.viewmodel.GroupDetailViewModel
+import com.splitpay.viewmodel.GroupMember
 import com.splitpay.viewmodel.Settlement
 
 // ── Brand colors ──────────────────────────────────────────────────────────────
@@ -42,6 +49,7 @@ private val OnSurface = Color(0xFF1A1C1E)
 private val OnSurfaceVariant = Color(0xFF3F4949)
 private val OutlineVariant = Color(0xFFBEC8C9)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupDetailScreen(
     groupId: String,
@@ -50,14 +58,153 @@ fun GroupDetailScreen(
     onNavigateToSettlement: (String) -> Unit,
     viewModel: GroupDetailViewModel = viewModel()
 ) {
-    val group by viewModel.group.collectAsStateWithLifecycle()
-    val expenses by viewModel.expenses.collectAsStateWithLifecycle()
-    val settlements by viewModel.settlements.collectAsStateWithLifecycle()
-    val yourBalance by viewModel.yourBalance.collectAsStateWithLifecycle()
+    val group        by viewModel.group.collectAsStateWithLifecycle()
+    val expenses     by viewModel.expenses.collectAsStateWithLifecycle()
+    val settlements  by viewModel.settlements.collectAsStateWithLifecycle()
+    val yourBalance  by viewModel.yourBalance.collectAsStateWithLifecycle()
     val totalSpending by viewModel.totalSpending.collectAsStateWithLifecycle()
+    val groupMembers by viewModel.groupMembers.collectAsStateWithLifecycle()
 
-    LaunchedEffect(groupId) {
-        viewModel.loadGroup(groupId)
+    var showMembersSheet by remember { mutableStateOf(false) }
+    val membersSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(groupId) { viewModel.loadGroup(groupId) }
+
+    // ── Members bottom sheet ──────────────────────────────────────────────
+    if (showMembersSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showMembersSheet = false },
+            sheetState = membersSheetState,
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Members",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Primary,
+                    letterSpacing = (-0.5).sp
+                )
+                Text(
+                    text = "${groupMembers.size} people in this group",
+                    fontSize = 13.sp,
+                    color = OnSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+                )
+
+                // Search bar
+                var memberSearch by remember { mutableStateOf("") }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceContainerLow)
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(Icons.Default.Search, null, tint = OnSurfaceVariant, modifier = Modifier.size(18.dp))
+                    BasicTextField(
+                        value = memberSearch,
+                        onValueChange = { memberSearch = it },
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = 15.sp, color = OnSurface, fontWeight = FontWeight.Medium),
+                        cursorBrush = SolidColor(Primary),
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { inner ->
+                            if (memberSearch.isEmpty()) Text("Search members…", fontSize = 15.sp, color = OutlineVariant)
+                            inner()
+                        }
+                    )
+                    if (memberSearch.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier.size(20.dp).clip(CircleShape).clickable { memberSearch = "" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Close, null, tint = OnSurfaceVariant, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                val filtered = remember(groupMembers, memberSearch) {
+                    if (memberSearch.isBlank()) groupMembers
+                    else groupMembers.filter { it.name.contains(memberSearch, ignoreCase = true) }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    filtered.forEach { member ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(SurfaceContainerLow)
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (member.isOnApp) Primary.copy(alpha = 0.1f)
+                                            else OutlineVariant.copy(alpha = 0.2f)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = member.name.first().toString(),
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (member.isOnApp) Primary else OnSurfaceVariant
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = member.name,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (member.isOnApp) OnSurface else OnSurfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                    if (!member.isOnApp) {
+                                        Text("Not on SplitPay", fontSize = 11.sp, color = OutlineVariant)
+                                    }
+                                }
+                            }
+                            if (!member.isOnApp) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(Primary.copy(alpha = 0.08f))
+                                        .clickable { }
+                                        .padding(horizontal = 14.dp, vertical = 7.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Default.PersonAdd, null, tint = Primary, modifier = Modifier.size(14.dp))
+                                        Text("Invite", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Primary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
@@ -102,7 +249,10 @@ fun GroupDetailScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     // Member avatars
-                    Row(horizontalArrangement = Arrangement.spacedBy((-8).dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy((-8).dp),
+                        modifier = Modifier.clickable { showMembersSheet = true }
+                    ) {
                         group?.members?.take(4)?.forEachIndexed { index, member ->
                             Box(
                                 modifier = Modifier

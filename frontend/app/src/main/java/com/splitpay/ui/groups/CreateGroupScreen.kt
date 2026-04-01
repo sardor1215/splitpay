@@ -15,6 +15,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,6 +49,7 @@ private val OnSurface        = Color(0xFF1A1C1E)
 private val OnSurfaceVariant = Color(0xFF3F4949)
 private val OutlineVariant   = Color(0xFFBEC8C9)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateGroupScreen(
     onNavigateBack: () -> Unit,
@@ -54,7 +58,102 @@ fun CreateGroupScreen(
     val groupName     by viewModel.groupName.collectAsStateWithLifecycle()
     val selectedEmoji by viewModel.selectedEmoji.collectAsStateWithLifecycle()
     val contacts      by viewModel.contacts.collectAsStateWithLifecycle()
-    val addedCount    = contacts.count { it.isAdded }
+    val isSyncing  by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val addedCount = contacts.count { it.isAdded }
+
+    val previewContacts = contacts.take(3)
+
+    var showAllSheet by remember { mutableStateOf(false) }
+    val sheetState   = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // ── All contacts sheet ────────────────────────────────────────────────
+    if (showAllSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAllSheet = false },
+            sheetState = sheetState,
+            containerColor = SurfaceLowest,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Add Members",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Primary,
+                    letterSpacing = (-0.5).sp
+                )
+                Text(
+                    text = "${contacts.size} contacts on SplitPay",
+                    fontSize = 13.sp,
+                    color = OnSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+                )
+
+                var sheetSearch by remember { mutableStateOf("") }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceLow)
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(Icons.Default.Search, null, tint = OnSurfaceVariant, modifier = Modifier.size(18.dp))
+                    BasicTextField(
+                        value = sheetSearch,
+                        onValueChange = { sheetSearch = it },
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = 15.sp, color = OnSurface, fontWeight = FontWeight.Medium),
+                        cursorBrush = SolidColor(Primary),
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { inner ->
+                            if (sheetSearch.isEmpty()) Text("Search contacts…", fontSize = 15.sp, color = OutlineVariant)
+                            inner()
+                        }
+                    )
+                    if (sheetSearch.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier.size(20.dp).clip(CircleShape).clickable { sheetSearch = "" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Close, null, tint = OnSurfaceVariant, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                val filtered = remember(contacts, sheetSearch) {
+                    if (sheetSearch.isBlank()) contacts
+                    else contacts.filter { it.name.contains(sheetSearch, ignoreCase = true) }
+                }
+
+                if (filtered.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No contacts found", fontSize = 14.sp, color = OutlineVariant)
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        filtered.forEach { contact ->
+                            ContactRow(
+                                contact = contact,
+                                onToggle = { viewModel.onToggleContact(contact.id) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
 
@@ -173,7 +272,7 @@ fun CreateGroupScreen(
 
             Spacer(modifier = Modifier.height(36.dp))
 
-            // ── Members ───────────────────────────────────────────────────
+            // ── Members header ────────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -204,13 +303,93 @@ fun CreateGroupScreen(
             }
             Spacer(modifier = Modifier.height(14.dp))
 
+            // ── Sync button ───────────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Primary.copy(alpha = 0.06f))
+                    .clickable { if (!isSyncing) viewModel.syncContacts() }
+                    .padding(horizontal = 16.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (isSyncing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = Primary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = null,
+                        tint = Primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = if (isSyncing) "Syncing…" else "Sync contacts",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Primary
+                    )
+                    Text(
+                        text = "Find your contacts who use SplitPay",
+                        fontSize = 11.sp,
+                        color = OnSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ── Preview (3 premiers) ──────────────────────────────────────
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                contacts.forEach { contact ->
+                previewContacts.forEach { contact ->
                     ContactRow(
                         contact = contact,
                         onToggle = { viewModel.onToggleContact(contact.id) }
                     )
                 }
+            }
+
+            // ── See all button → ouvre sheet ──────────────────────────────
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(SurfaceLowest)
+                    .clickable { showAllSheet = true }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PersonAdd,
+                        contentDescription = null,
+                        tint = Primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "See all (${contacts.size} contacts)",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Primary
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = OutlineVariant,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
 
@@ -303,58 +482,78 @@ private fun ContactRow(contact: Contact, onToggle: () -> Unit) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(SurfaceLowest)
-            .clickable { onToggle() }
+            .then(if (contact.isOnApp) Modifier.clickable { onToggle() } else Modifier)
             .padding(16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.weight(1f)
         ) {
-            // Avatar
             Box(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(Primary.copy(alpha = 0.1f)),
+                    .background(
+                        if (contact.isOnApp) Primary.copy(alpha = 0.1f)
+                        else OutlineVariant.copy(alpha = 0.2f)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = contact.name.first().toString(),
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Primary
+                    color = if (contact.isOnApp) Primary else OnSurfaceVariant
                 )
             }
-            Text(
-                text = contact.name,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = OnSurface
-            )
+            Column {
+                Text(
+                    text = contact.name,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (contact.isOnApp) OnSurface else OnSurfaceVariant.copy(alpha = 0.5f)
+                )
+                if (!contact.isOnApp) {
+                    Text(
+                        text = "Not on SplitPay",
+                        fontSize = 11.sp,
+                        color = OutlineVariant
+                    )
+                }
+            }
         }
 
-        // Checkbox
-        Box(
-            modifier = Modifier
-                .size(26.dp)
-                .clip(CircleShape)
-                .background(if (contact.isAdded) Primary else Color.Transparent)
-                .border(
-                    width = 2.dp,
-                    color = if (contact.isAdded) Primary else OutlineVariant,
-                    shape = CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            if (contact.isAdded) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(15.dp)
-                )
+        if (contact.isOnApp) {
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(if (contact.isAdded) Primary else Color.Transparent)
+                    .border(2.dp, if (contact.isAdded) Primary else OutlineVariant, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (contact.isAdded) {
+                    Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(15.dp))
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Primary.copy(alpha = 0.08f))
+                    .clickable { /* TODO: envoyer invitation */ }
+                    .padding(horizontal = 14.dp, vertical = 7.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Icons.Default.PersonAdd, null, tint = Primary, modifier = Modifier.size(14.dp))
+                    Text("Invite", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Primary)
+                }
             }
         }
     }

@@ -12,6 +12,11 @@ data class Settlement(
     val owesYou: Boolean
 )
 
+data class GroupMember(
+    val name: String,
+    val isOnApp: Boolean = true
+)
+
 class GroupDetailViewModel : ViewModel() {
 
     private val _group = MutableStateFlow<Group?>(null)
@@ -28,6 +33,9 @@ class GroupDetailViewModel : ViewModel() {
 
     private val _totalSpending = MutableStateFlow(0.0)
     val totalSpending: StateFlow<Double> = _totalSpending
+
+    private val _groupMembers = MutableStateFlow<List<GroupMember>>(emptyList())
+    val groupMembers: StateFlow<List<GroupMember>> = _groupMembers
 
     fun loadGroup(groupId: String) {
         // TODO: remplacer par appel API plus tard
@@ -87,6 +95,13 @@ class GroupDetailViewModel : ViewModel() {
         )
         _yourBalance.value = 142.50
         _totalSpending.value = 2480.0
+        _groupMembers.value = listOf(
+            GroupMember("You",   isOnApp = true),
+            GroupMember("Marc",  isOnApp = true),
+            GroupMember("Elena", isOnApp = true),
+            GroupMember("Alex",  isOnApp = false),
+            GroupMember("Sarah", isOnApp = false),
+        )
     }
 
     private fun loadApartment() {
@@ -111,6 +126,10 @@ class GroupDetailViewModel : ViewModel() {
         _settlements.value = emptyList()
         _yourBalance.value = -300.0
         _totalSpending.value = 600.0
+        _groupMembers.value = listOf(
+            GroupMember("You",      isOnApp = true),
+            GroupMember("Roommate", isOnApp = true),
+        )
     }
 
     private fun loadHike() {
@@ -135,5 +154,13 @@ class GroupDetailViewModel : ViewModel() {
         _settlements.value = emptyList()
         _yourBalance.value = 0.0
         _totalSpending.value = 120.0
+        _groupMembers.value = listOf(
+            GroupMember("You",  isOnApp = true),
+            GroupMember("Alex", isOnApp = true),
+            GroupMember("Sarah",isOnApp = false),
+            GroupMember("Tom",  isOnApp = true),
+            GroupMember("Emma", isOnApp = false),
+            GroupMember("Jake", isOnApp = true),
+        )
     }
 }

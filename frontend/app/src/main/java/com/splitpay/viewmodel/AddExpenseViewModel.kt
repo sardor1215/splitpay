@@ -10,7 +10,8 @@ data class Participant(
     val id: String,
     val name: String,
     val isIncluded: Boolean = true,
-    val share: Double = 0.0
+    val share: Double = 0.0,
+    val isOnApp: Boolean = true
 )
 
 class AddExpenseViewModel : ViewModel() {
@@ -29,10 +30,11 @@ class AddExpenseViewModel : ViewModel() {
 
     private val _participants = MutableStateFlow(
         listOf(
-            Participant(id = "1", name = "You", isIncluded = true),
-            Participant(id = "2", name = "Sarah Miller", isIncluded = true),
-            Participant(id = "3", name = "James Wilson", isIncluded = false),
-            Participant(id = "4", name = "Marc Dupont", isIncluded = true),
+            Participant(id = "1", name = "You",          isIncluded = true,  isOnApp = true),
+            Participant(id = "2", name = "Sarah Miller", isIncluded = true,  isOnApp = true),
+            Participant(id = "3", name = "James Wilson", isIncluded = false, isOnApp = false),
+            Participant(id = "4", name = "Marc Dupont",  isIncluded = true,  isOnApp = true),
+            Participant(id = "5", name = "Emma Larson",  isIncluded = false, isOnApp = false),
         )
     )
     val participants: StateFlow<List<Participant>> = _participants

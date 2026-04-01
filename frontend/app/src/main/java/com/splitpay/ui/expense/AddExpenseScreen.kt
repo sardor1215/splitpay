@@ -15,6 +15,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,6 +50,7 @@ private val OnSurface         = Color(0xFF1A1C1E)
 private val OnSurfaceVariant  = Color(0xFF3F4949)
 private val OutlineVariant    = Color(0xFFBEC8C9)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddExpenseScreen(
     groupId: String,
@@ -59,61 +62,199 @@ fun AddExpenseScreen(
     val paidBy       by viewModel.paidBy.collectAsStateWithLifecycle()
     val splitMode    by viewModel.splitMode.collectAsStateWithLifecycle()
     val participants by viewModel.participants.collectAsStateWithLifecycle()
-    var showPaidByDialog by remember { mutableStateOf(false) }
+    var showPaidBySheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // ── Paid By dialog ────────────────────────────────────────────────────
-    if (showPaidByDialog) {
-        AlertDialog(
-            onDismissRequest = { showPaidByDialog = false },
-            title = {
+    // ── Paid By bottom sheet ──────────────────────────────────────────────
+    if (showPaidBySheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showPaidBySheet = false },
+            sheetState = sheetState,
+            containerColor = SurfaceLowest,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                // Title
                 Text(
                     text = "Who paid?",
-                    fontWeight = FontWeight.Bold,
-                    color = OnSurface
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Primary,
+                    letterSpacing = (-0.5).sp
                 )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    val payers = listOf("You") + participants.map { it.name }.filter { it != "You" }
-                    payers.forEach { name ->
+                Text(
+                    text = "Select the person who covered this expense",
+                    fontSize = 13.sp,
+                    color = OnSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+                )
+
+                // Search bar
+                var paidBySearch by remember { mutableStateOf("") }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceLow)
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = OnSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    BasicTextField(
+                        value = paidBySearch,
+                        onValueChange = { paidBySearch = it },
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = 15.sp, color = OnSurface, fontWeight = FontWeight.Medium),
+                        cursorBrush = SolidColor(Primary),
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { inner ->
+                            if (paidBySearch.isEmpty()) Text("Search…", fontSize = 15.sp, color = OutlineVariant)
+                            inner()
+                        }
+                    )
+                    if (paidBySearch.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier.size(20.dp).clip(CircleShape).clickable { paidBySearch = "" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Close, null, tint = OnSurfaceVariant, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                val filteredParticipants = remember(participants, paidBySearch) {
+                    if (paidBySearch.isBlank()) participants
+                    else participants.filter { it.name.contains(paidBySearch, ignoreCase = true) }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    filteredParticipants.forEach { participant ->
+                        val isSelected = participant.name == paidBy
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(18.dp))
                                 .background(
-                                    if (name == paidBy) Primary.copy(alpha = 0.08f)
-                                    else Color.Transparent
+                                    if (isSelected) Primary.copy(alpha = 0.08f)
+                                    else Surface
                                 )
-                                .clickable {
-                                    viewModel.onPaidByChange(name)
-                                    showPaidByDialog = false
-                                }
-                                .padding(horizontal = 12.dp, vertical = 14.dp),
+                                .then(
+                                    if (participant.isOnApp)
+                                        Modifier.clickable {
+                                            viewModel.onPaidByChange(participant.name)
+                                            showPaidBySheet = false
+                                        }
+                                    else Modifier
+                                )
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = name,
-                                fontSize = 15.sp,
-                                fontWeight = if (name == paidBy) FontWeight.Bold else FontWeight.Normal,
-                                color = if (name == paidBy) Primary else OnSurface
-                            )
-                            if (name == paidBy) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = Primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                // Avatar
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (participant.isOnApp) Primary.copy(alpha = 0.1f)
+                                            else OutlineVariant.copy(alpha = 0.2f)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = participant.name.first().toString(),
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (participant.isOnApp) Primary else OnSurfaceVariant
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = participant.name,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (participant.isOnApp) OnSurface
+                                                else OnSurfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                    if (!participant.isOnApp) {
+                                        Text(
+                                            text = "Not on SplitPay",
+                                            fontSize = 11.sp,
+                                            color = OutlineVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (participant.isOnApp) {
+                                // Checkmark si sélectionné
+                                Box(
+                                    modifier = Modifier
+                                        .size(26.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) Primary else Color.Transparent)
+                                        .border(2.dp, if (isSelected) Primary else OutlineVariant, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            } else {
+                                // Bouton Invite
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(Primary.copy(alpha = 0.08f))
+                                        .clickable { /* TODO: envoyer invitation */ }
+                                        .padding(horizontal = 14.dp, vertical = 7.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PersonAdd,
+                                            contentDescription = null,
+                                            tint = Primary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "Invite",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Primary
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            },
-            confirmButton = {},
-            containerColor = Surface,
-            shape = RoundedCornerShape(24.dp)
-        )
+            }
+        }
     }
 
     Box(
@@ -236,7 +377,7 @@ fun AddExpenseScreen(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(SurfaceLow)
-                    .clickable { showPaidByDialog = true }
+                    .clickable { showPaidBySheet = true }
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
