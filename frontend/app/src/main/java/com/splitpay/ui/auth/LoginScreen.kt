@@ -47,7 +47,7 @@ fun LoginScreen(
     authViewModel: AuthViewModel = viewModel()
 ) {
     val uiState by authViewModel.uiState.collectAsStateWithLifecycle()
-    var email by remember { mutableStateOf("") }
+    var identifier by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
@@ -113,11 +113,11 @@ fun LoginScreen(
 
                     // ── Email field ───────────────────────────────────────
                     UnderlineField(
-                        value = email,
-                        onValueChange = { email = it },
+                        value = identifier,
+                        onValueChange = { identifier = it },
                         label = "EMAIL OR PHONE",
                         placeholder = "architect@splitpay.com",
-                        keyboardType = KeyboardType.Email
+                        keyboardType = KeyboardType.Text
                     )
 
                     Spacer(modifier = Modifier.height(28.dp))
@@ -171,7 +171,7 @@ fun LoginScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Button(
-                            onClick = { authViewModel.login(email, password) },
+                            onClick = { authViewModel.login(identifier, password) },
                             enabled = uiState !is AuthUiState.Loading,
                             modifier = Modifier.fillMaxSize(),
                             colors = ButtonDefaults.buttonColors(

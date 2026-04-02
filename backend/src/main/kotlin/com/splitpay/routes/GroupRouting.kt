@@ -16,6 +16,8 @@ import java.util.UUID
     val description: String? = null
 )
 
+@Serializable data class AddMemberRequest(val userId: String)
+
 @Serializable data class TransferAdminRequest(
     val toUserId: String
 )
@@ -33,6 +35,7 @@ import java.util.UUID
 
 @Serializable data class GroupMemberResponse(
     val userId: String,
+    val name: String,
     val role: String,
     val joinedAt: String
 )
@@ -78,6 +81,31 @@ fun Route.groupRoutes() {
                     call.respond(group.toResponse())
                 }
 
+                // POST /groups/:id/members — add a user directly (admin only)
+                post("/members") {
+                    val groupId = call.groupId() ?: return@post
+                    val adminId = call.currentUserId()
+                    val body    = call.receive<AddMemberRequest>()
+                    val userId  = runCatching { UUID.fromString(body.userId) }.getOrNull()
+                        ?: return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid user ID"))
+
+                    if (!GroupRepository.isAdmin(groupId, adminId))
+                        return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Only admins can add members"))
+
+                    if (GroupRepository.isMember(groupId, userId))
+                        return@post call.respond(HttpStatusCode.Conflict, MessageResponse("User is already a member"))
+
+                    val group = GroupRepository.findById(groupId)
+                        ?: return@post call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
+
+                    val memberCount = GroupRepository.getMemberCount(groupId)
+                    if (memberCount >= group.maxMembers)
+                        return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Group is full (max ${group.maxMembers} members)"))
+
+                    GroupRepository.addMember(groupId, userId)
+                    call.respond(HttpStatusCode.OK, MessageResponse("Member added"))
+                }
+
                 // GET /groups/:id/members
                 get("/members") {
                     val groupId = call.groupId() ?: return@get
@@ -86,8 +114,14 @@ fun Route.groupRoutes() {
                     if (!GroupRepository.isMember(groupId, userId))
                         return@get call.respond(HttpStatusCode.Forbidden, MessageResponse("Not a member"))
 
-                    val members = GroupRepository.getMembers(groupId).map {
-                        GroupMemberResponse(it.userId.toString(), it.role, it.joinedAt.toString())
+                    val members = GroupRepository.getMembers(groupId).map { m ->
+                        val user = com.splitpay.repository.UserRepository.findById(m.userId)
+                        GroupMemberResponse(
+                            userId   = m.userId.toString(),
+                            name     = user?.name ?: "Unknown",
+                            role     = m.role,
+                            joinedAt = m.joinedAt.toString()
+                        )
                     }
                     call.respond(members)
                 }

@@ -29,7 +29,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.data.model.Group
 import com.splitpay.viewmodel.HomeViewModel
@@ -57,6 +60,17 @@ fun GroupsScreen(
     val groups by viewModel.groups.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
     var searchActive by remember { mutableStateOf(false) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.loadGroups()
+            viewModel.startPolling()
+        }
+    }
+    DisposableEffect(lifecycleOwner) {
+        onDispose { viewModel.stopPolling() }
+    }
 
     val filteredGroups = remember(groups, searchQuery) {
         if (searchQuery.isBlank()) groups
@@ -315,7 +329,7 @@ private fun GroupCard(group: Group, onClick: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "${group.members.size} members",
+                        text = "${group.memberCount} member${if (group.memberCount != 1) "s" else ""}",
                         fontSize = 12.sp,
                         color = OnSurfaceVariant
                     )

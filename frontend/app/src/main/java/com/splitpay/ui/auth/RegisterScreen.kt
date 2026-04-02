@@ -43,6 +43,7 @@ fun RegisterScreen(
 
     var displayName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -132,6 +133,17 @@ fun RegisterScreen(
 
                     Spacer(modifier = Modifier.height(28.dp))
 
+                    // ── Phone (optional) ──────────────────────────────────
+                    UnderlineField(
+                        value = phone,
+                        onValueChange = { phone = it },
+                        label = "PHONE (OPTIONAL)",
+                        placeholder = "+1 234 567 8900",
+                        keyboardType = KeyboardType.Phone
+                    )
+
+                    Spacer(modifier = Modifier.height(28.dp))
+
                     // ── Password ──────────────────────────────────────────
                     UnderlineField(
                         value = password,
@@ -203,7 +215,7 @@ fun RegisterScreen(
                                     password != confirmPassword ->
                                         passwordError = "Passwords do not match"
                                     else ->
-                                        authViewModel.register(email, password, displayName)
+                                        authViewModel.register(email, password, displayName, phone)
                                 }
                             },
                             enabled = uiState !is AuthUiState.Loading,

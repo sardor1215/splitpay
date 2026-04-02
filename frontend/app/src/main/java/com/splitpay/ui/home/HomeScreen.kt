@@ -24,7 +24,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.data.model.Group
 import com.splitpay.viewmodel.HomeViewModel
@@ -55,6 +58,17 @@ fun HomeScreen(
     val totalOwed by homeViewModel.totalOwed.collectAsStateWithLifecycle()
     val totalOwe by homeViewModel.totalOwe.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            homeViewModel.loadGroups()
+            homeViewModel.startPolling()
+        }
+    }
+    DisposableEffect(lifecycleOwner) {
+        onDispose { homeViewModel.stopPolling() }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
 
@@ -134,8 +148,8 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // ── Group items ───────────────────────────────────────────────
-            items(groups) { group ->
+            // ── Group items (max 5) ───────────────────────────────────────
+            items(groups.take(5)) { group ->
                 GroupItem(
                     group = group,
                     onClick = { onNavigateToGroup(group.id) }
@@ -333,21 +347,13 @@ fun GroupItem(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "${group.members.size} members",
+                        text = "${group.memberCount} member${if (group.memberCount != 1) "s" else ""}",
                         fontSize = 12.sp,
                         color = OnSurfaceVariant
                     )
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = group.lastActivity.uppercase(),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = OutlineVariant,
-                    letterSpacing = 0.5.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = balanceLabel,
                     fontSize = 10.sp,

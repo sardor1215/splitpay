@@ -24,7 +24,7 @@ import java.util.UUID
 )
 
 @Serializable data class LoginRequest(
-    val email: String,
+    val identifier: String, // email or phone number
     val password: String
 )
 
@@ -73,6 +73,9 @@ import java.util.UUID
 
 @Serializable data class MessageResponse(val message: String)
 
+@Serializable data class PhoneLookupRequest(val phones: List<String>)
+@Serializable data class UserLookupResult(val phone: String, val userId: String, val name: String)
+
 // ── Helper ─────────────────────────────────────────────────────────────────
 fun ApplicationCall.currentUserId(): UUID =
     UUID.fromString(principal<JWTPrincipal>()!!.payload.subject)
@@ -105,7 +108,12 @@ fun Route.authRoutes() {
         // POST /auth/login
         post("/login") {
             val body = call.receive<LoginRequest>()
-            val user = UserRepository.findByEmail(body.email)
+
+            // Accept email or phone number
+            val user = if (body.identifier.contains("@"))
+                UserRepository.findByEmail(body.identifier)
+            else
+                UserRepository.findByPhone(body.identifier)
 
             if (user == null || !UserRepository.verifyPassword(user, body.password))
                 return@post call.respond(HttpStatusCode.Unauthorized, MessageResponse("Invalid credentials"))
@@ -231,6 +239,16 @@ fun Route.authRoutes() {
 
     // ── Protected user routes ──────────────────────────────────────────
     authenticate("auth-jwt") {
+
+        // POST /users/lookup — find SplitPay users by phone numbers (batch)
+        post("/users/lookup") {
+            val body    = call.receive<PhoneLookupRequest>()
+            val matched = UserRepository.findByPhones(body.phones)
+            val results = matched.map { (phone, user) ->
+                UserLookupResult(phone = phone, userId = user.id.toString(), name = user.name)
+            }
+            call.respond(results)
+        }
 
         // GET /me
         get("/me") {

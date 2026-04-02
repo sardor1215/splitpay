@@ -63,6 +63,11 @@ object UserRepository {
             .singleOrNull()?.toUser()
     }
 
+    fun findByPhone(phone: String): User? = loggedTransaction {
+        Users.select { (Users.phone eq phone) and (Users.isDeleted eq false) }
+            .singleOrNull()?.toUser()
+    }
+
     fun findByGoogleId(googleId: String): User? = loggedTransaction {
         Users.select { Users.googleId eq googleId }
             .singleOrNull()?.toUser()
@@ -77,6 +82,19 @@ object UserRepository {
         Users.select { Users.refreshToken eq token }
             .singleOrNull()?.toUser()
     }
+
+    fun findByPhones(phones: List<String>): Map<String, User> = loggedTransaction {
+        if (phones.isEmpty()) return@loggedTransaction emptyMap()
+        val normalizedToOriginal = phones.associateBy { normalizePhone(it) }
+        Users.select { (Users.phone.isNotNull()) and (Users.isDeleted eq false) }
+            .mapNotNull { row ->
+                val dbPhone = row[Users.phone] ?: return@mapNotNull null
+                val dbNorm  = normalizePhone(dbPhone)
+                normalizedToOriginal[dbNorm]?.let { original -> original to row.toUser() }
+            }.toMap()
+    }
+
+    private fun normalizePhone(phone: String) = phone.replace(Regex("[^+0-9]"), "")
 
     // ── Auth helpers ──────────────────────────────────────────────────────
     fun verifyPassword(user: User, password: String): Boolean =

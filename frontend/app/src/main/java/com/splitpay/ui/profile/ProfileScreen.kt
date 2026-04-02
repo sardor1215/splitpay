@@ -56,6 +56,7 @@ fun ProfileScreen(
 ) {
     val userName     by viewModel.userName.collectAsStateWithLifecycle()
     val userEmail    by viewModel.userEmail.collectAsStateWithLifecycle()
+    val userPhone    by viewModel.userPhone.collectAsStateWithLifecycle()
     val totalBalance by viewModel.totalBalance.collectAsStateWithLifecycle()
     val groupCount   by viewModel.groupCount.collectAsStateWithLifecycle()
     val darkMode     by viewModel.darkMode.collectAsStateWithLifecycle()
@@ -132,6 +133,15 @@ fun ProfileScreen(
                     fontWeight = FontWeight.Medium,
                     color = OnSurfaceVariant
                 )
+                if (userPhone.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = userPhone,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = OnSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(20.dp))
 

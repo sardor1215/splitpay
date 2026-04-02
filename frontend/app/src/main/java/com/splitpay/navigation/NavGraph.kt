@@ -1,11 +1,14 @@
 package com.splitpay.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.splitpay.network.TokenManager
 import com.splitpay.ui.auth.LoginScreen
 import com.splitpay.ui.auth.RegisterScreen
 import com.splitpay.ui.groups.CreateGroupScreen
@@ -15,13 +18,21 @@ import com.splitpay.ui.expense.AddExpenseScreen
 import com.splitpay.ui.group.GroupDetailScreen
 import com.splitpay.ui.profile.ProfileScreen
 import com.splitpay.ui.settlement.SettlementScreen
+import com.splitpay.viewmodel.HomeViewModel
 
 @Composable
 fun NavGraph(navController: NavHostController) {
 
+    val context = LocalContext.current
+    val tokenManager = TokenManager(context)
+    val startDestination = if (tokenManager.isLoggedIn()) Screen.Home.route else Screen.Login.route
+
+    // Instance partagée entre HomeScreen et GroupsScreen
+    val homeViewModel: HomeViewModel = viewModel()
+
     NavHost(
         navController = navController,
-        startDestination = Screen.Login.route
+        startDestination = startDestination
     ) {
 
         // ─── Auth ─────────────────────────────────────────
@@ -70,7 +81,8 @@ fun NavGraph(navController: NavHostController) {
                 },
                 onNavigateToSettlement = { groupId ->
                     navController.navigate(Screen.Settlement.createRoute(groupId))
-                }
+                },
+                homeViewModel = homeViewModel
             )
         }
 
@@ -90,14 +102,20 @@ fun NavGraph(navController: NavHostController) {
                 },
                 onNavigateToCreateGroup = {
                     navController.navigate(Screen.CreateGroup.route)
-                }
+                },
+                viewModel = homeViewModel
             )
         }
 
         // ─── Create Group ────────────────────────────────────
         composable(Screen.CreateGroup.route) {
             CreateGroupScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onGroupCreated = { groupId ->
+                    navController.navigate(Screen.GroupDetail.createRoute(groupId)) {
+                        popUpTo(Screen.CreateGroup.route) { inclusive = true }
+                    }
+                }
             )
         }
 

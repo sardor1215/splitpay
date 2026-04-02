@@ -1,5 +1,8 @@
 package com.splitpay.ui.groups
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,6 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.viewmodel.Contact
@@ -53,18 +59,38 @@ private val OutlineVariant   = Color(0xFFBEC8C9)
 @Composable
 fun CreateGroupScreen(
     onNavigateBack: () -> Unit,
+    onGroupCreated: (groupId: String) -> Unit,
     viewModel: CreateGroupViewModel = viewModel()
 ) {
     val groupName     by viewModel.groupName.collectAsStateWithLifecycle()
     val selectedEmoji by viewModel.selectedEmoji.collectAsStateWithLifecycle()
     val contacts      by viewModel.contacts.collectAsStateWithLifecycle()
-    val isSyncing  by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val isSyncing     by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val isLoading     by viewModel.isLoading.collectAsStateWithLifecycle()
+    val createError   by viewModel.createError.collectAsStateWithLifecycle()
     val addedCount = contacts.count { it.isAdded }
 
     val previewContacts = contacts.take(3)
 
     var showAllSheet by remember { mutableStateOf(false) }
     val sheetState   = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val context = LocalContext.current
+
+    val syncPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) viewModel.syncContacts() }
+
+    // Auto-sync on first open
+    LaunchedEffect(Unit) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            viewModel.syncContacts()
+        } else {
+            syncPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+        }
+    }
 
     // ── All contacts sheet ────────────────────────────────────────────────
     if (showAllSheet) {
@@ -309,7 +335,7 @@ fun CreateGroupScreen(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(Primary.copy(alpha = 0.06f))
-                    .clickable { if (!isSyncing) viewModel.syncContacts() }
+                    .clickable { if (!isSyncing) syncPermissionLauncher.launch(Manifest.permission.READ_CONTACTS) }
                     .padding(horizontal = 16.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -345,43 +371,61 @@ fun CreateGroupScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // ── Preview (3 premiers) ──────────────────────────────────────
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                previewContacts.forEach { contact ->
-                    ContactRow(
-                        contact = contact,
-                        onToggle = { viewModel.onToggleContact(contact.id) }
+            if (contacts.isEmpty()) {
+                // ── Empty state ───────────────────────────────────────────
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(SurfaceLowest)
+                        .padding(vertical = 28.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Tap \"Sync contacts\" to find\nyour friends on SplitPay",
+                        fontSize = 13.sp,
+                        color = OutlineVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
-            }
+            } else {
+                // ── Preview (3 premiers) ──────────────────────────────────
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    previewContacts.forEach { contact ->
+                        ContactRow(
+                            contact = contact,
+                            onToggle = { viewModel.onToggleContact(contact.id) }
+                        )
+                    }
+                }
 
-            // ── See all button → ouvre sheet ──────────────────────────────
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(SurfaceLowest)
-                    .clickable { showAllSheet = true }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+                // ── See all button → ouvre sheet ──────────────────────────
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceLowest)
+                        .clickable { showAllSheet = true }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PersonAdd,
-                        contentDescription = null,
-                        tint = Primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = "See all (${contacts.size} contacts)",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Primary
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PersonAdd,
+                            contentDescription = null,
+                            tint = Primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "See all (${contacts.size} contacts)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Primary
                     )
                 }
                 Icon(
@@ -389,6 +433,23 @@ fun CreateGroupScreen(
                     contentDescription = null,
                     tint = OutlineVariant,
                     modifier = Modifier.size(18.dp)
+                )
+            }
+            } // end if (contacts.isEmpty()) else
+
+            // ── Error dialog ──────────────────────────────────────────────
+            if (createError != null) {
+                AlertDialog(
+                    onDismissRequest = { viewModel.clearError() },
+                    title = { Text("Error", fontWeight = FontWeight.Bold) },
+                    text  = { Text(createError!!) },
+                    confirmButton = {
+                        TextButton(onClick = { viewModel.clearError() }) {
+                            Text("OK", color = Primary, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    containerColor = Color(0xFFFFFFFF),
+                    shape = RoundedCornerShape(24.dp)
                 )
             }
         }
@@ -430,14 +491,15 @@ fun CreateGroupScreen(
                     color = Primary,
                     letterSpacing = (-0.5).sp
                 )
-                TextButton(onClick = {
-                    viewModel.createGroup { onNavigateBack() }
-                }) {
+                TextButton(
+                    onClick = { viewModel.createGroup { groupId -> onGroupCreated(groupId) } },
+                    enabled = !isLoading
+                ) {
                     Text(
                         text = "Create",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Primary
+                        color = if (isLoading) Primary.copy(alpha = 0.4f) else Primary
                     )
                 }
             }
@@ -457,18 +519,31 @@ fun CreateGroupScreen(
                     .shadow(elevation = 12.dp, shape = RoundedCornerShape(50), spotColor = Primary.copy(alpha = 0.3f))
                     .clip(RoundedCornerShape(50))
                     .background(
-                        Brush.linearGradient(colors = listOf(Primary, PrimaryContainer))
+                        Brush.linearGradient(
+                            colors = if (isLoading)
+                                listOf(Primary.copy(alpha = 0.6f), PrimaryContainer.copy(alpha = 0.6f))
+                            else
+                                listOf(Primary, PrimaryContainer)
+                        )
                     )
-                    .clickable { viewModel.createGroup { onNavigateBack() } },
+                    .then(if (!isLoading) Modifier.clickable { viewModel.createGroup { groupId -> onGroupCreated(groupId) } } else Modifier),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = if (addedCount > 0) "Create Group · $addedCount member${if (addedCount > 1) "s" else ""}"
-                           else "Create Group",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color.White,
+                        strokeWidth = 2.5.dp
+                    )
+                } else {
+                    Text(
+                        text = if (addedCount > 0) "Create Group · $addedCount member${if (addedCount > 1) "s" else ""}"
+                               else "Create Group",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
             }
         }
     }

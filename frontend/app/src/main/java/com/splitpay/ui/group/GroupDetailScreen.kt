@@ -1,6 +1,10 @@
 package com.splitpay.ui.group
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,10 +15,12 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,12 +31,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
+import android.content.pm.PackageManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.data.model.Expense
+import com.splitpay.viewmodel.ContactWithStatus
 import com.splitpay.viewmodel.GroupDetailViewModel
 import com.splitpay.viewmodel.GroupMember
 import com.splitpay.viewmodel.Settlement
@@ -58,6 +68,7 @@ fun GroupDetailScreen(
     onNavigateToSettlement: (String) -> Unit,
     viewModel: GroupDetailViewModel = viewModel()
 ) {
+    val isLoading    by viewModel.isLoading.collectAsStateWithLifecycle()
     val group        by viewModel.group.collectAsStateWithLifecycle()
     val expenses     by viewModel.expenses.collectAsStateWithLifecycle()
     val settlements  by viewModel.settlements.collectAsStateWithLifecycle()
@@ -65,10 +76,45 @@ fun GroupDetailScreen(
     val totalSpending by viewModel.totalSpending.collectAsStateWithLifecycle()
     val groupMembers by viewModel.groupMembers.collectAsStateWithLifecycle()
 
-    var showMembersSheet by remember { mutableStateOf(false) }
-    val membersSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val contacts         by viewModel.contacts.collectAsStateWithLifecycle()
+    val isLoadingContacts by viewModel.isLoadingContacts.collectAsStateWithLifecycle()
+    val contactsError    by viewModel.contactsError.collectAsStateWithLifecycle()
+    val addMemberError   by viewModel.addMemberError.collectAsStateWithLifecycle()
 
-    LaunchedEffect(groupId) { viewModel.loadGroup(groupId) }
+    var showMembersSheet   by remember { mutableStateOf(false) }
+    var showAddMemberSheet by remember { mutableStateOf(false) }
+    val membersSheetState    = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val addMemberSheetState  = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val context = LocalContext.current
+
+    // Permission launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            showAddMemberSheet = true
+            viewModel.loadContacts()
+        }
+    }
+
+    // Auto-load contacts when sheet opens (if permission already granted)
+    LaunchedEffect(showAddMemberSheet) {
+        if (showAddMemberSheet &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            viewModel.loadContacts()
+        }
+    }
+
+    LaunchedEffect(groupId) {
+        viewModel.loadGroup(groupId)
+        viewModel.startPolling(groupId)
+    }
+    DisposableEffect(groupId) {
+        onDispose { viewModel.stopPolling() }
+    }
 
     // ── Members bottom sheet ──────────────────────────────────────────────
     if (showMembersSheet) {
@@ -203,6 +249,172 @@ fun GroupDetailScreen(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // ── Add Member button ─────────────────────────────────────
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Primary.copy(alpha = 0.06f))
+                        .clickable {
+                            showMembersSheet = false
+                            permissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+                        }
+                        .padding(horizontal = 16.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Default.PersonAdd, null, tint = Primary, modifier = Modifier.size(18.dp))
+                    Column {
+                        Text("Add Member", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Primary)
+                        Text("Sync from your contacts", fontSize = 11.sp, color = OnSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Add Member sheet ──────────────────────────────────────────────────
+    if (showAddMemberSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAddMemberSheet = false },
+            sheetState = addMemberSheetState,
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Add Member",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Primary,
+                            letterSpacing = (-0.5).sp
+                        )
+                        Text(
+                            text = "${contacts.count { it.isOnApp }} contacts on SplitPay",
+                            fontSize = 13.sp,
+                            color = OnSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                    // Reload button
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Primary.copy(alpha = 0.06f))
+                            .clickable { if (!isLoadingContacts) viewModel.loadContacts() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isLoadingContacts) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Primary,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.Sync, null, tint = Primary, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Search bar
+                var addSearch by remember { mutableStateOf("") }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceContainerLow)
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(Icons.Default.Search, null, tint = OnSurfaceVariant, modifier = Modifier.size(18.dp))
+                    BasicTextField(
+                        value = addSearch,
+                        onValueChange = { addSearch = it },
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = 15.sp, color = OnSurface, fontWeight = FontWeight.Medium),
+                        cursorBrush = SolidColor(Primary),
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { inner ->
+                            if (addSearch.isEmpty()) Text("Search contacts…", fontSize = 15.sp, color = OutlineVariant)
+                            inner()
+                        }
+                    )
+                    if (addSearch.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier.size(20.dp).clip(CircleShape).clickable { addSearch = "" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Close, null, tint = OnSurfaceVariant, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Error dialog
+                val errorMsg = contactsError ?: addMemberError
+                if (errorMsg != null) {
+                    AlertDialog(
+                        onDismissRequest = { viewModel.clearErrors() },
+                        title = { Text("Error", fontWeight = FontWeight.Bold) },
+                        text  = { Text(errorMsg) },
+                        confirmButton = {
+                            TextButton(onClick = { viewModel.clearErrors() }) {
+                                Text("OK", color = Primary, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        containerColor = Color(0xFFFFFFFF),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                }
+
+                val filtered = remember(contacts, addSearch) {
+                    if (addSearch.isBlank()) contacts
+                    else contacts.filter { it.name.contains(addSearch, ignoreCase = true) }
+                }
+
+                if (isLoadingContacts) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = Primary)
+                    }
+                } else if (filtered.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No contacts found", fontSize = 14.sp, color = OutlineVariant)
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        filtered.forEach { contact ->
+                            AddMemberContactRow(
+                                contact = contact,
+                                onAdd   = { viewModel.addMember(groupId, contact.userId!!) {} }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -249,49 +461,63 @@ fun GroupDetailScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     // Member avatars
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy((-8).dp),
-                        modifier = Modifier.clickable { showMembersSheet = true }
-                    ) {
-                        group?.members?.take(4)?.forEachIndexed { index, member ->
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        when (index % 3) {
-                                            0 -> Primary.copy(alpha = 0.15f)
-                                            1 -> Secondary.copy(alpha = 0.15f)
-                                            else -> Tertiary.copy(alpha = 0.15f)
+                    if (groupMembers.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy((-8).dp),
+                            modifier = Modifier.clickable { showMembersSheet = true }
+                        ) {
+                            groupMembers.take(4).forEachIndexed { index, member ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            when (index % 3) {
+                                                0 -> Primary.copy(alpha = 0.15f)
+                                                1 -> Secondary.copy(alpha = 0.15f)
+                                                else -> Tertiary.copy(alpha = 0.15f)
+                                            }
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = member.name.first().toString(),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = when (index % 3) {
+                                            0 -> Primary
+                                            1 -> Secondary
+                                            else -> Tertiary
                                         }
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = member.first().toString(),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = when (index % 3) {
-                                        0 -> Primary
-                                        1 -> Secondary
-                                        else -> Tertiary
-                                    }
-                                )
+                                    )
+                                }
+                            }
+                            if (groupMembers.size > 4) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(SurfaceContainerHigh),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "+${groupMembers.size - 4}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = OnSurfaceVariant
+                                    )
+                                }
                             }
                         }
-                        if ((group?.members?.size ?: 0) > 4) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(SurfaceContainerHigh),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "+${(group?.members?.size ?: 0) - 4}",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = OnSurfaceVariant
+                    } else if (isLoading) {
+                        // Placeholder while loading
+                        Row(horizontalArrangement = Arrangement.spacedBy((-8).dp)) {
+                            repeat(3) { index ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(SurfaceContainerHigh)
                                 )
                             }
                         }
@@ -411,7 +637,7 @@ fun GroupDetailScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = group?.members?.firstOrNull() ?: "",
+                                text = groupMembers.firstOrNull()?.name ?: "",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -491,6 +717,18 @@ fun GroupDetailScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // ── Loading overlay ───────────────────────────────────────────────
+        if (isLoading && group == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Surface),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Primary)
             }
         }
 
@@ -746,5 +984,97 @@ fun SettlementRow(settlement: Settlement) {
             fontSize = 15.sp,
             color = if (settlement.owesYou) Secondary else Tertiary
         )
+    }
+}
+
+// ── Add Member Contact Row ─────────────────────────────────────────────────────
+@Composable
+private fun AddMemberContactRow(contact: ContactWithStatus, onAdd: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(SurfaceContainerLow)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (contact.isOnApp) Primary.copy(alpha = 0.1f)
+                        else OutlineVariant.copy(alpha = 0.2f)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = contact.name.first().toString(),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (contact.isOnApp) Primary else OnSurfaceVariant
+                )
+            }
+            Column {
+                Text(
+                    text = contact.name,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (contact.isOnApp) OnSurface else OnSurfaceVariant.copy(alpha = 0.5f)
+                )
+                Text(
+                    text = if (contact.isOnApp) contact.phone else "Not on SplitPay",
+                    fontSize = 11.sp,
+                    color = if (contact.isOnApp) OnSurfaceVariant else OutlineVariant
+                )
+            }
+        }
+
+        when {
+            contact.isAdded -> {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                }
+            }
+            contact.isOnApp -> {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Primary)
+                        .clickable { onAdd() }
+                        .padding(horizontal = 14.dp, vertical = 7.dp)
+                ) {
+                    Text("Add", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+            else -> {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Primary.copy(alpha = 0.08f))
+                        .padding(horizontal = 14.dp, vertical = 7.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Default.PersonAdd, null, tint = Primary, modifier = Modifier.size(14.dp))
+                        Text("Invite", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Primary)
+                    }
+                }
+            }
+        }
     }
 }

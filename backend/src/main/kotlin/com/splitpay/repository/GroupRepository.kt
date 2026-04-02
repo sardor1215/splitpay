@@ -64,6 +64,7 @@ object GroupRepository {
     fun findByUser(userId: UUID): List<Group> = loggedTransaction {
         (ExpenseGroups innerJoin GroupMembers)
             .select { (GroupMembers.userId eq userId) and (ExpenseGroups.isArchived eq false) }
+            .orderBy(ExpenseGroups.createdAt, SortOrder.DESC)
             .map { it.toGroup() }
     }
 
@@ -88,6 +89,17 @@ object GroupRepository {
 
     fun isAdmin(groupId: UUID, userId: UUID): Boolean =
         getMember(groupId, userId)?.role == "admin"
+
+    // ── Add member directly ────────────────────────────────────────────
+    fun addMember(groupId: UUID, userId: UUID): Boolean = loggedTransaction {
+        if (isMember(groupId, userId)) return@loggedTransaction false
+        GroupMembers.insert {
+            it[GroupMembers.groupId] = groupId
+            it[GroupMembers.userId]  = userId
+            it[GroupMembers.role]    = "member"
+        }
+        true
+    }
 
     // ── Join via invite link ────────────────────────────────────────────
     fun joinByToken(token: String, userId: UUID): Group? = loggedTransaction {

@@ -1,11 +1,20 @@
 package com.splitpay.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
+import com.splitpay.data.AppCache
+import com.splitpay.network.AddMemberRequest
+import com.splitpay.network.CreateGroupRequest
+import com.splitpay.network.PhoneLookupRequest
+import com.splitpay.network.RetrofitClient
+import com.splitpay.network.TokenManager
+import com.splitpay.util.ContactReader
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class Contact(
     val id: String,
@@ -14,7 +23,10 @@ data class Contact(
     val isOnApp: Boolean = true
 )
 
-class CreateGroupViewModel : ViewModel() {
+class CreateGroupViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val tokenManager = TokenManager(application)
+    private val api          = RetrofitClient.build(tokenManager)
 
     private val _groupName = MutableStateFlow("")
     val groupName: StateFlow<String> = _groupName
@@ -22,16 +34,7 @@ class CreateGroupViewModel : ViewModel() {
     private val _selectedEmoji = MutableStateFlow("🏠")
     val selectedEmoji: StateFlow<String> = _selectedEmoji
 
-    private val _contacts = MutableStateFlow(
-        listOf(
-            Contact(id = "1", name = "Sarah Miller", isOnApp = true),
-            Contact(id = "2", name = "James Wilson", isOnApp = false),
-            Contact(id = "3", name = "Marc Dupont",  isOnApp = true),
-            Contact(id = "4", name = "Emma Larson",  isOnApp = false),
-            Contact(id = "5", name = "Tom Nguyen",   isOnApp = true),
-            Contact(id = "6", name = "Jake Foster",  isOnApp = false),
-        )
-    )
+    private val _contacts = MutableStateFlow<List<Contact>>(emptyList())
     val contacts: StateFlow<List<Contact>> = _contacts
 
     val emojis = listOf(
@@ -60,15 +63,74 @@ class CreateGroupViewModel : ViewModel() {
     fun syncContacts() {
         viewModelScope.launch {
             _isSyncing.value = true
-            delay(1500) // TODO: appel API réel
-            _isSyncing.value = false
+            try {
+                val deviceContacts = withContext(Dispatchers.IO) {
+                    ContactReader.read(getApplication())
+                }
+                if (deviceContacts.isNotEmpty()) {
+                    val phones   = deviceContacts.map { it.phone }
+                    val response = api.lookupUsers(PhoneLookupRequest(phones))
+                    // Map phone → (userId, name) for contacts on SplitPay
+                    val lookupMap = if (response.isSuccessful)
+                        response.body()?.associate { it.phone to it.userId } ?: emptyMap()
+                    else emptyMap()
+
+                    _contacts.value = deviceContacts.map { dc ->
+                        val userId = lookupMap[dc.phone]
+                        Contact(
+                            id      = userId ?: dc.phone, // real userId when on app
+                            name    = dc.name,
+                            isOnApp = userId != null
+                        )
+                    }
+                }
+            } catch (_: Exception) { /* keep existing list */ }
+            finally { _isSyncing.value = false }
         }
     }
 
-    fun createGroup(onSuccess: () -> Unit) {
-        if (_groupName.value.isNotBlank()) {
-            // TODO: connecter à l'API backend
-            onSuccess()
+    private val _createError = MutableStateFlow<String?>(null)
+    val createError: StateFlow<String?> = _createError
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
+    fun clearError() { _createError.value = null }
+
+    fun createGroup(onSuccess: (groupId: String) -> Unit) {
+        if (_groupName.value.isBlank()) {
+            _createError.value = "Group name is required"
+            return
+        }
+        viewModelScope.launch {
+            _isLoading.value = true
+            _createError.value = null
+            try {
+                val response = api.createGroup(
+                    CreateGroupRequest(
+                        name        = _groupName.value,
+                        description = _selectedEmoji.value
+                    )
+                )
+                if (response.isSuccessful) {
+                    val groupId = response.body()!!.id
+                    // Add all selected contacts as members
+                    _contacts.value
+                        .filter { it.isAdded && it.isOnApp }
+                        .forEach { contact ->
+                            try { api.addMemberToGroup(groupId, AddMemberRequest(contact.id)) }
+                            catch (_: Exception) { /* skip failed individual adds */ }
+                        }
+                    AppCache.groups = null   // invalidate so list re-fetches fresh
+                    onSuccess(groupId)
+                } else {
+                    _createError.value = "Failed to create group (${response.code()})"
+                }
+            } catch (_: Exception) {
+                _createError.value = "Cannot reach server. Check your connection."
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 }
