@@ -146,7 +146,8 @@ class CreateGroupViewModel(application: Application) : AndroidViewModel(applicat
                     )
                     AppCache.groupDetails[groupId] = optimisticGroup
                     AppCache.groupMembers[groupId] = optimisticMembers
-                    AppCache.groups = null   // force groups list to re-fetch fresh
+                    // Prepend to groups list so it appears immediately at the top
+                    AppCache.groups = listOf(optimisticGroup) + (AppCache.groups ?: emptyList())
 
                     onSuccess(groupId)
                 } else {

@@ -66,7 +66,7 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try { api.logout() } catch (_: Exception) {}
             tokenManager.clear()
-            AppCache.clear()
+            AppCache.onLogout()
             onLogout()
         }
     }

@@ -18,16 +18,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val tokenManager = TokenManager(application)
     private val api          = RetrofitClient.build(tokenManager)
 
-    private val _groups = MutableStateFlow<List<Group>>(emptyList())
+    private val _groups = MutableStateFlow<List<Group>>(AppCache.groups ?: emptyList())
     val groups: StateFlow<List<Group>> = _groups
 
-    private val _totalOwed = MutableStateFlow(0.0)
+    private val _totalOwed = MutableStateFlow(AppCache.groups?.filter { it.balance > 0 }?.sumOf { it.balance } ?: 0.0)
     val totalOwed: StateFlow<Double> = _totalOwed
 
-    private val _totalOwe = MutableStateFlow(0.0)
+    private val _totalOwe = MutableStateFlow(AppCache.groups?.filter { it.balance < 0 }?.sumOf { -it.balance } ?: 0.0)
     val totalOwe: StateFlow<Double> = _totalOwe
 
-    private val _isLoading = MutableStateFlow(false)
+    private val _isLoading = MutableStateFlow(AppCache.groups == null)
     val isLoading: StateFlow<Boolean> = _isLoading
 
     private var pollingJob: Job? = null

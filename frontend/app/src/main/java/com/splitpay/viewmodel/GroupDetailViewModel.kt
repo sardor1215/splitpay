@@ -2,6 +2,7 @@ package com.splitpay.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.splitpay.data.AppCache
 import com.splitpay.data.model.Expense
@@ -40,15 +41,22 @@ data class ContactWithStatus(
     val isOnApp get() = userId != null
 }
 
-class GroupDetailViewModel(application: Application) : AndroidViewModel(application) {
+class GroupDetailViewModel(
+    application: Application,
+    savedStateHandle: SavedStateHandle
+) : AndroidViewModel(application) {
+
+    // groupId available immediately from nav args — used to pre-load cache in init
+    private val cachedGroupId: String = savedStateHandle.get<String>("groupId") ?: ""
 
     private val tokenManager = TokenManager(application)
     private val api          = RetrofitClient.build(tokenManager)
 
-    private val _isLoading = MutableStateFlow(false)
+    // StateFlows initialized from cache so the very first frame has data — no spinner
+    private val _isLoading = MutableStateFlow(AppCache.groupDetails[cachedGroupId] == null)
     val isLoading: StateFlow<Boolean> = _isLoading
 
-    private val _group = MutableStateFlow<Group?>(null)
+    private val _group = MutableStateFlow<Group?>(AppCache.groupDetails[cachedGroupId])
     val group: StateFlow<Group?> = _group
 
     private val _expenses = MutableStateFlow<List<Expense>>(emptyList())
@@ -63,11 +71,15 @@ class GroupDetailViewModel(application: Application) : AndroidViewModel(applicat
     private val _totalSpending = MutableStateFlow(0.0)
     val totalSpending: StateFlow<Double> = _totalSpending
 
-    private val _groupMembers = MutableStateFlow<List<GroupMember>>(emptyList())
+    private val _groupMembers = MutableStateFlow<List<GroupMember>>(
+        AppCache.groupMembers[cachedGroupId] ?: emptyList()
+    )
     val groupMembers: StateFlow<List<GroupMember>> = _groupMembers
 
     // ── Contacts / Add Member ─────────────────────────────────────────────
-    private val _contacts = MutableStateFlow<List<ContactWithStatus>>(emptyList())
+    private val _contacts = MutableStateFlow<List<ContactWithStatus>>(
+        AppCache.contactsWithStatus ?: emptyList()  // serve cache immediately on VM creation
+    )
     val contacts: StateFlow<List<ContactWithStatus>> = _contacts
 
     private val _isLoadingContacts = MutableStateFlow(false)
@@ -165,7 +177,7 @@ class GroupDetailViewModel(application: Application) : AndroidViewModel(applicat
                     response.body()?.associate { it.phone to (it.userId to it.name) } ?: emptyMap()
                 } else emptyMap()
 
-                _contacts.value = deviceContacts.map { contact ->
+                val fresh = deviceContacts.map { contact ->
                     val match = lookupMap[contact.phone]
                     ContactWithStatus(
                         name   = contact.name,
@@ -173,6 +185,10 @@ class GroupDetailViewModel(application: Application) : AndroidViewModel(applicat
                         userId = match?.first
                     )
                 }
+                // Preserve already-added state during refresh
+                val alreadyAdded = _contacts.value.filter { it.isAdded }.map { it.userId }.toSet()
+                _contacts.value = fresh.map { if (it.userId in alreadyAdded) it.copy(isAdded = true) else it }
+                AppCache.contactsWithStatus = fresh
             } catch (e: Exception) {
                 _contactsError.value = "Cannot reach server. Check your connection."
             } finally {

@@ -3,6 +3,7 @@ package com.splitpay.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.splitpay.data.AppCache
 import com.splitpay.network.LoginRequest
 import com.splitpay.network.RegisterRequest
 import com.splitpay.network.RetrofitClient
@@ -41,6 +42,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     tokenManager.saveUserId(body.userId)
                     tokenManager.saveUserName(body.name)
                     tokenManager.saveUserEmail(body.email)
+                    AppCache.onLogin(body.userId)
                     _uiState.value = AuthUiState.Success
                 } else {
                     val msg = when (response.code()) {
@@ -88,6 +90,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     tokenManager.saveUserId(body.userId)
                     tokenManager.saveUserName(body.name)
                     tokenManager.saveUserEmail(body.email)
+                    AppCache.onLogin(body.userId)
                     _uiState.value = AuthUiState.Success
                 } else {
                     _uiState.value = AuthUiState.Error("Account created! Please log in.")

@@ -112,6 +112,7 @@ fun NavGraph(navController: NavHostController) {
             CreateGroupScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onGroupCreated = { groupId ->
+                    homeViewModel.loadGroups()   // update Home + Groups list immediately
                     navController.navigate(Screen.GroupDetail.createRoute(groupId)) {
                         popUpTo(Screen.CreateGroup.route) { inclusive = true }
                     }
