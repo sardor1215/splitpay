@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.splitpay.data.AppCache
+import com.splitpay.data.model.Group
 import com.splitpay.network.AddMemberRequest
 import com.splitpay.network.CreateGroupRequest
 import com.splitpay.network.PhoneLookupRequest
@@ -113,15 +114,35 @@ class CreateGroupViewModel(application: Application) : AndroidViewModel(applicat
                     )
                 )
                 if (response.isSuccessful) {
-                    val groupId = response.body()!!.id
+                    val groupId  = response.body()!!.id
+                    val selected = _contacts.value.filter { it.isAdded && it.isOnApp }
+
                     // Add all selected contacts as members
-                    _contacts.value
-                        .filter { it.isAdded && it.isOnApp }
-                        .forEach { contact ->
-                            try { api.addMemberToGroup(groupId, AddMemberRequest(contact.id)) }
-                            catch (_: Exception) { /* skip failed individual adds */ }
-                        }
-                    AppCache.groups = null   // invalidate so list re-fetches fresh
+                    selected.forEach { contact ->
+                        try { api.addMemberToGroup(groupId, AddMemberRequest(contact.id)) }
+                        catch (_: Exception) { }
+                    }
+
+                    // Optimistic cache — populate immediately so GroupDetail shows
+                    // data instantly without waiting for API on first open
+                    val myName = tokenManager.getUserName() ?: "You"
+                    val optimisticMembers = buildList {
+                        add(GroupMember(name = myName, isOnApp = true))
+                        selected.forEach { add(GroupMember(name = it.name, isOnApp = true)) }
+                    }
+                    val optimisticGroup = Group(
+                        id           = groupId,
+                        name         = _groupName.value,
+                        members      = emptyList(),
+                        memberCount  = optimisticMembers.size,
+                        balance      = 0.0,
+                        lastActivity = "",
+                        emoji        = _selectedEmoji.value
+                    )
+                    AppCache.groupDetails[groupId] = optimisticGroup
+                    AppCache.groupMembers[groupId] = optimisticMembers
+                    AppCache.groups = null   // force groups list to re-fetch fresh
+
                     onSuccess(groupId)
                 } else {
                     _createError.value = "Failed to create group (${response.code()})"
