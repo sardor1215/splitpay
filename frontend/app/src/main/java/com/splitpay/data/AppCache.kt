@@ -1,6 +1,7 @@
 package com.splitpay.data
 
 import com.splitpay.data.model.Group
+import com.splitpay.viewmodel.Contact
 import com.splitpay.viewmodel.GroupMember
 
 /**
@@ -15,15 +16,19 @@ object AppCache {
     val groupDetails: MutableMap<String, Group> = mutableMapOf()
     val groupMembers: MutableMap<String, List<GroupMember>> = mutableMapOf()
 
+    // Device contacts enriched with SplitPay status (CreateGroupScreen)
+    var contacts: List<Contact>? = null
+
     fun invalidateGroup(groupId: String) {
         groupDetails.remove(groupId)
         groupMembers.remove(groupId)
-        groups = null          // force groups list to re-fetch too
+        groups = null
     }
 
     fun clear() {
         groups = null
         groupDetails.clear()
         groupMembers.clear()
+        contacts = null
     }
 }

@@ -35,7 +35,9 @@ class CreateGroupViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedEmoji = MutableStateFlow("🏠")
     val selectedEmoji: StateFlow<String> = _selectedEmoji
 
-    private val _contacts = MutableStateFlow<List<Contact>>(emptyList())
+    private val _contacts = MutableStateFlow<List<Contact>>(
+        AppCache.contacts ?: emptyList()  // serve cache immediately on VM creation
+    )
     val contacts: StateFlow<List<Contact>> = _contacts
 
     val emojis = listOf(
@@ -69,23 +71,26 @@ class CreateGroupViewModel(application: Application) : AndroidViewModel(applicat
                     ContactReader.read(getApplication())
                 }
                 if (deviceContacts.isNotEmpty()) {
-                    val phones   = deviceContacts.map { it.phone }
-                    val response = api.lookupUsers(PhoneLookupRequest(phones))
-                    // Map phone → (userId, name) for contacts on SplitPay
+                    val phones    = deviceContacts.map { it.phone }
+                    val response  = api.lookupUsers(PhoneLookupRequest(phones))
                     val lookupMap = if (response.isSuccessful)
                         response.body()?.associate { it.phone to it.userId } ?: emptyMap()
                     else emptyMap()
 
-                    _contacts.value = deviceContacts.map { dc ->
+                    val fresh = deviceContacts.map { dc ->
                         val userId = lookupMap[dc.phone]
                         Contact(
-                            id      = userId ?: dc.phone, // real userId when on app
+                            id      = userId ?: dc.phone,
                             name    = dc.name,
                             isOnApp = userId != null
                         )
                     }
+                    // Preserve already-toggled selections from cached version
+                    val selected = _contacts.value.filter { it.isAdded }.map { it.id }.toSet()
+                    _contacts.value  = fresh.map { if (it.id in selected) it.copy(isAdded = true) else it }
+                    AppCache.contacts = fresh
                 }
-            } catch (_: Exception) { /* keep existing list */ }
+            } catch (_: Exception) { /* keep showing cached list */ }
             finally { _isSyncing.value = false }
         }
     }
