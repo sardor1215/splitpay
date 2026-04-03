@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
@@ -50,11 +51,13 @@ fun HomeScreen(
     onNavigateToGroup: (String) -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToGroups: () -> Unit,
+    onNavigateToArchivedGroups: () -> Unit,
     onNavigateToCreateGroup: () -> Unit,
     onNavigateToSettlement: (String) -> Unit,
     homeViewModel: HomeViewModel = viewModel()
 ) {
     val groups by homeViewModel.groups.collectAsStateWithLifecycle()
+    val archivedGroups by homeViewModel.archivedGroups.collectAsStateWithLifecycle()
     val totalOwed by homeViewModel.totalOwed.collectAsStateWithLifecycle()
     val totalOwe by homeViewModel.totalOwe.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -125,6 +128,57 @@ fun HomeScreen(
 
             // ── Groups header ─────────────────────────────────────────────
             item {
+                // Archived card first (if any)
+                if (archivedGroups.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(SurfaceContainerLowest)
+                            .clickable { onNavigateToArchivedGroups() }
+                            .padding(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(OnSurfaceVariant.copy(alpha = 0.08f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Archive,
+                                        contentDescription = null,
+                                        tint = OnSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Column {
+                                    Text("Archived", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
+                                    Text(
+                                        text = "${archivedGroups.size} group${if (archivedGroups.size > 1) "s" else ""}",
+                                        fontSize = 12.sp,
+                                        color = OnSurfaceVariant
+                                    )
+                                }
+                            }
+                            Text(
+                                text = archivedGroups.take(3).joinToString("  ") { it.emoji },
+                                fontSize = 18.sp
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

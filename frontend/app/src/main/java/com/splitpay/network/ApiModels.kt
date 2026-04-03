@@ -76,6 +76,11 @@ data class GroupMemberResponse(
     val joinedAt: String
 )
 
+data class UpdateGroupRequest(
+    val name: String? = null,
+    val description: String? = null
+)
+
 // ── Members ───────────────────────────────────────────────────────────────────
 
 data class AddMemberRequest(

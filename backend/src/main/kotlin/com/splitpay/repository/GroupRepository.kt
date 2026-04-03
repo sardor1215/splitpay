@@ -68,6 +68,13 @@ object GroupRepository {
             .map { it.toGroup() }
     }
 
+    fun findArchivedByUser(userId: UUID): List<Group> = loggedTransaction {
+        (ExpenseGroups innerJoin GroupMembers)
+            .select { (GroupMembers.userId eq userId) and (ExpenseGroups.isArchived eq true) }
+            .orderBy(ExpenseGroups.createdAt, SortOrder.DESC)
+            .map { it.toGroup() }
+    }
+
     // ── Members ────────────────────────────────────────────────────────
     fun getMembers(groupId: UUID): List<GroupMember> = loggedTransaction {
         GroupMembers.select { GroupMembers.groupId eq groupId }
@@ -158,11 +165,31 @@ object GroupRepository {
         removeMember(groupId, userId)
     }
 
+    // ── Update name / description ──────────────────────────────────────
+    fun update(groupId: UUID, name: String?, description: String?): Boolean = loggedTransaction {
+        ExpenseGroups.update({ ExpenseGroups.id eq groupId }) {
+            if (name != null)        it[ExpenseGroups.name]        = name
+            if (description != null) it[ExpenseGroups.description] = description
+        } > 0
+    }
+
+    // ── Delete (hard) ──────────────────────────────────────────────────
+    fun delete(groupId: UUID): Boolean = loggedTransaction {
+        GroupMembers.deleteWhere { GroupMembers.groupId eq groupId }
+        ExpenseGroups.deleteWhere { ExpenseGroups.id eq groupId } > 0
+    }
+
     // ── Archive ────────────────────────────────────────────────────────
     fun archive(groupId: UUID): Boolean = loggedTransaction {
         ExpenseGroups.update({ ExpenseGroups.id eq groupId }) {
             it[isArchived] = true
             it[archivedAt] = OffsetDateTime.now()
+        } > 0
+    }
+
+    fun unarchive(groupId: UUID): Boolean = loggedTransaction {
+        ExpenseGroups.update({ ExpenseGroups.id eq groupId }) {
+            it[isArchived] = false
         } > 0
     }
 

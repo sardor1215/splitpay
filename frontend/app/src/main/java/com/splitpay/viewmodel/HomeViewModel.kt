@@ -27,6 +27,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _totalOwe = MutableStateFlow(AppCache.groups?.filter { it.balance < 0 }?.sumOf { -it.balance } ?: 0.0)
     val totalOwe: StateFlow<Double> = _totalOwe
 
+    private val _archivedGroups = MutableStateFlow<List<Group>>(AppCache.archivedGroups ?: emptyList())
+    val archivedGroups: StateFlow<List<Group>> = _archivedGroups
+
     private val _isLoading = MutableStateFlow(AppCache.groups == null)
     val isLoading: StateFlow<Boolean> = _isLoading
 
@@ -35,6 +38,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     init { loadGroups() }
 
     fun startPolling() {
+        // Sync cache immediately every time the screen resumes (picks up changes from GroupDetail)
+        AppCache.groups?.let { applyGroups(it) }
+        AppCache.archivedGroups?.let { _archivedGroups.value = it }
         if (pollingJob?.isActive == true) return
         pollingJob = viewModelScope.launch {
             while (true) {
@@ -77,6 +83,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 AppCache.groups = fresh
                 applyGroups(fresh)
+            }
+            val archivedResponse = api.getArchivedGroups()
+            if (archivedResponse.isSuccessful) {
+                val freshArchived = (archivedResponse.body() ?: emptyList()).map { g ->
+                    Group(
+                        id           = g.id,
+                        name         = g.name,
+                        members      = emptyList(),
+                        memberCount  = g.memberCount,
+                        balance      = 0.0,
+                        lastActivity = "",
+                        emoji        = g.description?.takeIf { it.isNotBlank() } ?: "💰",
+                        isArchived   = true
+                    )
+                }
+                AppCache.archivedGroups = freshArchived
+                _archivedGroups.value = freshArchived
             }
         } catch (_: Exception) {
             // Keep showing existing data on network error

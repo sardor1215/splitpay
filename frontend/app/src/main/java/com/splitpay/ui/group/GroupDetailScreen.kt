@@ -9,6 +9,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -17,7 +20,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
@@ -80,11 +88,17 @@ fun GroupDetailScreen(
     val isLoadingContacts by viewModel.isLoadingContacts.collectAsStateWithLifecycle()
     val contactsError    by viewModel.contactsError.collectAsStateWithLifecycle()
     val addMemberError   by viewModel.addMemberError.collectAsStateWithLifecycle()
+    val groupError       by viewModel.groupError.collectAsStateWithLifecycle()
 
     var showMembersSheet   by remember { mutableStateOf(false) }
     var showAddMemberSheet by remember { mutableStateOf(false) }
+    var showSettingsSheet  by remember { mutableStateOf(false) }
+    var showEditDialog     by remember { mutableStateOf(false) }
+    var showDeleteConfirm  by remember { mutableStateOf(false) }
+    var showArchiveConfirm by remember { mutableStateOf(false) }
     val membersSheetState    = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val addMemberSheetState  = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val settingsSheetState   = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val context = LocalContext.current
 
@@ -198,15 +212,16 @@ fun GroupDetailScreen(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
                                 Box(
                                     modifier = Modifier
                                         .size(44.dp)
                                         .clip(CircleShape)
                                         .background(
-                                            if (member.isOnApp) Primary.copy(alpha = 0.1f)
-                                            else OutlineVariant.copy(alpha = 0.2f)
+                                            if (member.role == "admin") Primary.copy(alpha = 0.15f)
+                                            else Primary.copy(alpha = 0.07f)
                                         ),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -214,35 +229,59 @@ fun GroupDetailScreen(
                                         text = member.name.first().toString(),
                                         fontSize = 17.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (member.isOnApp) Primary else OnSurfaceVariant
+                                        color = Primary
                                     )
                                 }
                                 Column {
-                                    Text(
-                                        text = member.name,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (member.isOnApp) OnSurface else OnSurfaceVariant.copy(alpha = 0.5f)
-                                    )
-                                    if (!member.isOnApp) {
-                                        Text("Not on SplitPay", fontSize = 11.sp, color = OutlineVariant)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = member.name,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = OnSurface
+                                        )
+                                        if (member.role == "admin") {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(Primary.copy(alpha = 0.12f))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Admin",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Primary
+                                                )
+                                            }
+                                        }
                                     }
+                                    Text(
+                                        text = if (member.isOnApp) "On SplitPay" else "Not on SplitPay",
+                                        fontSize = 11.sp,
+                                        color = if (member.isOnApp) OnSurfaceVariant else OutlineVariant
+                                    )
                                 }
                             }
-                            if (!member.isOnApp) {
+                            if (member.userId.isNotEmpty() && member.role != "admin") {
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(50))
-                                        .background(Primary.copy(alpha = 0.08f))
-                                        .clickable { }
+                                        .background(Tertiary.copy(alpha = 0.07f))
+                                        .clickable {
+                                            viewModel.removeMember(groupId, member.userId) {}
+                                        }
                                         .padding(horizontal = 14.dp, vertical = 7.dp)
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Icon(Icons.Default.PersonAdd, null, tint = Primary, modifier = Modifier.size(14.dp))
-                                        Text("Invite", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Primary)
+                                        Icon(Icons.Default.PersonRemove, null, tint = Tertiary, modifier = Modifier.size(14.dp))
+                                        Text("Remove", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Tertiary)
                                     }
                                 }
                             }
@@ -278,6 +317,19 @@ fun GroupDetailScreen(
 
     // ── Add Member sheet ──────────────────────────────────────────────────
     if (showAddMemberSheet) {
+        var addSearch   by remember { mutableStateOf("") }
+        var selectedIds by remember { mutableStateOf(setOf<String>()) }
+
+        val memberUserIds = remember(groupMembers) { groupMembers.map { it.userId }.toSet() }
+        val filtered = remember(contacts, addSearch, memberUserIds) {
+            contacts
+                .filter { it.isOnApp && it.userId !in memberUserIds }
+                .let { list ->
+                    if (addSearch.isBlank()) list
+                    else list.filter { it.name.contains(addSearch, ignoreCase = true) }
+                }
+        }
+
         ModalBottomSheet(
             onDismissRequest = { showAddMemberSheet = false },
             sheetState = addMemberSheetState,
@@ -290,6 +342,7 @@ fun GroupDetailScreen(
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 32.dp)
             ) {
+                // ── Header ────────────────────────────────────────────────
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -297,20 +350,21 @@ fun GroupDetailScreen(
                 ) {
                     Column {
                         Text(
-                            text = "Add Member",
+                            text = "Add Members",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black,
                             color = Primary,
                             letterSpacing = (-0.5).sp
                         )
                         Text(
-                            text = "${contacts.count { it.isOnApp }} contacts on SplitPay",
+                            text = if (selectedIds.isEmpty()) "${filtered.size} available"
+                                   else "${selectedIds.size} selected",
                             fontSize = 13.sp,
-                            color = OnSurfaceVariant,
+                            color = if (selectedIds.isEmpty()) OnSurfaceVariant else Primary,
+                            fontWeight = if (selectedIds.isEmpty()) FontWeight.Normal else FontWeight.SemiBold,
                             modifier = Modifier.padding(top = 2.dp)
                         )
                     }
-                    // Reload button
                     Box(
                         modifier = Modifier
                             .size(36.dp)
@@ -320,11 +374,7 @@ fun GroupDetailScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         if (isLoadingContacts) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                color = Primary,
-                                strokeWidth = 2.dp
-                            )
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Primary, strokeWidth = 2.dp)
                         } else {
                             Icon(Icons.Default.Sync, null, tint = Primary, modifier = Modifier.size(18.dp))
                         }
@@ -333,8 +383,7 @@ fun GroupDetailScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Search bar
-                var addSearch by remember { mutableStateOf("") }
+                // ── Search bar ────────────────────────────────────────────
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -369,7 +418,7 @@ fun GroupDetailScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Error dialog
+                // ── Error ─────────────────────────────────────────────────
                 val errorMsg = contactsError ?: addMemberError
                 if (errorMsg != null) {
                     AlertDialog(
@@ -381,38 +430,381 @@ fun GroupDetailScreen(
                                 Text("OK", color = Primary, fontWeight = FontWeight.Bold)
                             }
                         },
-                        containerColor = Color(0xFFFFFFFF),
+                        containerColor = SurfaceContainerLowest,
                         shape = RoundedCornerShape(24.dp)
                     )
                 }
 
-                val filtered = remember(contacts, addSearch) {
-                    if (addSearch.isBlank()) contacts
-                    else contacts.filter { it.name.contains(addSearch, ignoreCase = true) }
-                }
-
+                // ── Contact list with checkboxes ──────────────────────────
                 if (isLoadingContacts) {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
                         contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = Primary)
-                    }
+                    ) { CircularProgressIndicator(color = Primary) }
                 } else if (filtered.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
                         contentAlignment = Alignment.Center
-                    ) {
-                        Text("No contacts found", fontSize = 14.sp, color = OutlineVariant)
-                    }
+                    ) { Text("No contacts found", fontSize = 14.sp, color = OutlineVariant) }
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         filtered.forEach { contact ->
-                            AddMemberContactRow(
-                                contact = contact,
-                                onAdd   = { viewModel.addMember(groupId, contact.userId!!) {} }
-                            )
+                            val isSelected = contact.userId in selectedIds
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(
+                                        if (isSelected) Primary.copy(alpha = 0.07f)
+                                        else SurfaceContainerLow
+                                    )
+                                    .clickable {
+                                        val uid = contact.userId ?: return@clickable
+                                        selectedIds = if (isSelected) selectedIds - uid else selectedIds + uid
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) Primary else Primary.copy(alpha = 0.1f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isSelected) {
+                                        Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                    } else {
+                                        Text(
+                                            text = contact.name.first().toString(),
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Primary
+                                        )
+                                    }
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = contact.name,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = OnSurface
+                                    )
+                                    Text(
+                                        text = contact.phone,
+                                        fontSize = 11.sp,
+                                        color = OnSurfaceVariant
+                                    )
+                                }
+                                Checkbox(
+                                    checked = isSelected,
+                                    onCheckedChange = { checked ->
+                                        val uid = contact.userId ?: return@Checkbox
+                                        selectedIds = if (checked) selectedIds + uid else selectedIds - uid
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = Primary,
+                                        uncheckedColor = OutlineVariant
+                                    )
+                                )
+                            }
                         }
+                    }
+                }
+
+                // ── Add button ────────────────────────────────────────────
+                if (selectedIds.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                    colors = listOf(Primary, PrimaryContainer)
+                                )
+                            )
+                            .clickable {
+                                showAddMemberSheet = false
+                                viewModel.addMembers(groupId, selectedIds.toList()) {}
+                            }
+                            .padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Add ${selectedIds.size} member${if (selectedIds.size > 1) "s" else ""}",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Group error dialog ────────────────────────────────────────────────
+    if (groupError != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearErrors() },
+            title = { Text("Error", fontWeight = FontWeight.Bold) },
+            text  = { Text(groupError!!) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearErrors() }) {
+                    Text("OK", color = Primary, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // ── Delete confirmation dialog ────────────────────────────────────────
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Group", fontWeight = FontWeight.Bold, color = Tertiary) },
+            text  = { Text("This will permanently delete the group and all its data. This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    viewModel.deleteGroup(groupId) { onNavigateBack() }
+                }) {
+                    Text("Delete", color = Tertiary, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel", color = Primary)
+                }
+            },
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // ── Archive confirmation dialog ───────────────────────────────────────
+    if (showArchiveConfirm) {
+        AlertDialog(
+            onDismissRequest = { showArchiveConfirm = false },
+            title = { Text("Archive Group", fontWeight = FontWeight.Bold) },
+            text  = { Text("The group will be archived and hidden from your list. Members won't be able to add expenses.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showArchiveConfirm = false
+                    viewModel.archiveGroup(groupId) { onNavigateBack() }
+                }) {
+                    Text("Archive", color = Primary, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showArchiveConfirm = false }) {
+                    Text("Cancel", color = OnSurfaceVariant)
+                }
+            },
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // ── Edit group dialog ─────────────────────────────────────────────────
+    if (showEditDialog) {
+        var editName  by remember { mutableStateOf(group?.name ?: "") }
+        var editEmoji by remember { mutableStateOf(group?.emoji ?: "💰") }
+        val emojis = listOf("🏠","✈️","🍕","🏕️","🎉","🛒","🏋️","🎮","🎵","🚗","⚽","📚","💼","🌴","🍻","🎓","💊","🐾","💰")
+        AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            title = { Text("Edit Group", fontWeight = FontWeight.Bold) },
+            text  = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("Group name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("Emoji", fontSize = 13.sp, color = OnSurfaceVariant, fontWeight = FontWeight.Medium)
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(6),
+                        modifier = Modifier.height(110.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        gridItems(emojis) { emoji ->
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (editEmoji == emoji) Primary.copy(alpha = 0.15f) else SurfaceContainerLow)
+                                    .border(if (editEmoji == emoji) 2.dp else 0.dp, if (editEmoji == emoji) Primary else Color.Transparent, RoundedCornerShape(10.dp))
+                                    .clickable { editEmoji = emoji },
+                                contentAlignment = Alignment.Center
+                            ) { Text(emoji, fontSize = 18.sp) }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (editName.isNotBlank()) {
+                            showEditDialog = false
+                            viewModel.updateGroup(groupId, editName, editEmoji) {}
+                        }
+                    }
+                ) { Text("Save", color = Primary, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditDialog = false }) { Text("Cancel", color = OnSurfaceVariant) }
+            },
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // ── Settings sheet ────────────────────────────────────────────────────
+    if (showSettingsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSettingsSheet = false },
+            sheetState = settingsSheetState,
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 40.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Group Settings",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Primary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                // Members
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceContainerLow)
+                        .clickable { showSettingsSheet = false; showMembersSheet = true }
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(40.dp).clip(CircleShape).background(Primary.copy(alpha = 0.08f)),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Default.Group, null, tint = Primary, modifier = Modifier.size(20.dp)) }
+                    Column {
+                        Text("Members", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
+                        Text("${groupMembers.size} people in this group", fontSize = 12.sp, color = OnSurfaceVariant)
+                    }
+                }
+                // Add Member
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceContainerLow)
+                        .clickable {
+                            showSettingsSheet = false
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS)
+                                == PackageManager.PERMISSION_GRANTED
+                            ) {
+                                showAddMemberSheet = true
+                                viewModel.loadContacts()
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+                            }
+                        }
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(40.dp).clip(CircleShape).background(Primary.copy(alpha = 0.08f)),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Default.PersonAdd, null, tint = Primary, modifier = Modifier.size(20.dp)) }
+                    Column {
+                        Text("Add Member", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
+                        Text("Invite from your contacts", fontSize = 12.sp, color = OnSurfaceVariant)
+                    }
+                }
+                // Edit
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceContainerLow)
+                        .clickable { showSettingsSheet = false; showEditDialog = true }
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(40.dp).clip(CircleShape).background(Primary.copy(alpha = 0.08f)),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Default.Edit, null, tint = Primary, modifier = Modifier.size(20.dp)) }
+                    Column {
+                        Text("Edit Group", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
+                        Text("Change name and emoji", fontSize = 12.sp, color = OnSurfaceVariant)
+                    }
+                }
+                // Archive / Unarchive
+                val isArchived = group?.isArchived == true
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceContainerLow)
+                        .clickable {
+                            showSettingsSheet = false
+                            if (isArchived) viewModel.unarchiveGroup(groupId) { onNavigateBack() }
+                            else showArchiveConfirm = true
+                        }
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(40.dp).clip(CircleShape).background(OnSurfaceVariant.copy(alpha = 0.08f)),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Default.Archive, null, tint = OnSurfaceVariant, modifier = Modifier.size(20.dp)) }
+                    Column {
+                        Text(
+                            text = if (isArchived) "Unarchive Group" else "Archive Group",
+                            fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface
+                        )
+                        Text(
+                            text = if (isArchived) "Move back to active groups" else "Hide without deleting",
+                            fontSize = 12.sp, color = OnSurfaceVariant
+                        )
+                    }
+                }
+                // Delete
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Tertiary.copy(alpha = 0.05f))
+                        .clickable { showSettingsSheet = false; showDeleteConfirm = true }
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(40.dp).clip(CircleShape).background(Tertiary.copy(alpha = 0.08f)),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Default.Delete, null, tint = Tertiary, modifier = Modifier.size(20.dp)) }
+                    Column {
+                        Text("Delete Group", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tertiary)
+                        Text("Permanently delete this group", fontSize = 12.sp, color = Tertiary.copy(alpha = 0.7f))
                     }
                 }
             }
@@ -761,7 +1153,7 @@ fun GroupDetailScreen(
                     fontWeight = FontWeight.Bold,
                     color = Primary
                 )
-                IconButton(onClick = { }) {
+                IconButton(onClick = { showSettingsSheet = true }) {
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = "Settings",
@@ -987,94 +1379,3 @@ fun SettlementRow(settlement: Settlement) {
     }
 }
 
-// ── Add Member Contact Row ─────────────────────────────────────────────────────
-@Composable
-private fun AddMemberContactRow(contact: ContactWithStatus, onAdd: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(SurfaceContainerLow)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (contact.isOnApp) Primary.copy(alpha = 0.1f)
-                        else OutlineVariant.copy(alpha = 0.2f)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = contact.name.first().toString(),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (contact.isOnApp) Primary else OnSurfaceVariant
-                )
-            }
-            Column {
-                Text(
-                    text = contact.name,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (contact.isOnApp) OnSurface else OnSurfaceVariant.copy(alpha = 0.5f)
-                )
-                Text(
-                    text = if (contact.isOnApp) contact.phone else "Not on SplitPay",
-                    fontSize = 11.sp,
-                    color = if (contact.isOnApp) OnSurfaceVariant else OutlineVariant
-                )
-            }
-        }
-
-        when {
-            contact.isAdded -> {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(Primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                }
-            }
-            contact.isOnApp -> {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(Primary)
-                        .clickable { onAdd() }
-                        .padding(horizontal = 14.dp, vertical = 7.dp)
-                ) {
-                    Text("Add", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                }
-            }
-            else -> {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(Primary.copy(alpha = 0.08f))
-                        .padding(horizontal = 14.dp, vertical = 7.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(Icons.Default.PersonAdd, null, tint = Primary, modifier = Modifier.size(14.dp))
-                        Text("Invite", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Primary)
-                    }
-                }
-            }
-        }
-    }
-}

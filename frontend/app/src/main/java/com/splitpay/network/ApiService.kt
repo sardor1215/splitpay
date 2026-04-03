@@ -40,8 +40,17 @@ interface ApiService {
     @GET("groups")
     suspend fun getGroups(): Response<List<GroupResponse>>
 
+    @GET("groups/archived")
+    suspend fun getArchivedGroups(): Response<List<GroupResponse>>
+
     @GET("groups/{id}")
     suspend fun getGroup(@Path("id") id: String): Response<GroupResponse>
+
+    @PATCH("groups/{id}")
+    suspend fun updateGroup(@Path("id") id: String, @Body request: UpdateGroupRequest): Response<GroupResponse>
+
+    @DELETE("groups/{id}")
+    suspend fun deleteGroup(@Path("id") id: String): Response<MessageResponse>
 
     @GET("groups/{id}/members")
     suspend fun getGroupMembers(@Path("id") id: String): Response<List<GroupMemberResponse>>
@@ -49,11 +58,20 @@ interface ApiService {
     @POST("groups/{id}/members")
     suspend fun addMemberToGroup(@Path("id") id: String, @Body request: AddMemberRequest): Response<MessageResponse>
 
+    @DELETE("groups/{id}/members/{memberId}")
+    suspend fun removeMember(@Path("id") id: String, @Path("memberId") memberId: String): Response<MessageResponse>
+
     @POST("groups/join/{token}")
     suspend fun joinGroup(@Path("token") token: String): Response<MessageResponse>
 
     @POST("groups/{id}/leave")
     suspend fun leaveGroup(@Path("id") id: String): Response<MessageResponse>
+
+    @PATCH("groups/{id}/archive")
+    suspend fun archiveGroup(@Path("id") id: String): Response<MessageResponse>
+
+    @PATCH("groups/{id}/unarchive")
+    suspend fun unarchiveGroup(@Path("id") id: String): Response<MessageResponse>
 
     // ── User lookup ───────────────────────────────────────────────────────
     @POST("users/lookup")

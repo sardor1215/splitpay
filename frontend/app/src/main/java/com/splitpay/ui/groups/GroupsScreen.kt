@@ -10,6 +10,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Home
@@ -55,9 +57,12 @@ fun GroupsScreen(
     onNavigateToGroup: (String) -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToCreateGroup: () -> Unit,
+    onNavigateToArchived: () -> Unit = {},
+    archivedOnly: Boolean = false,
     viewModel: HomeViewModel = viewModel()
 ) {
-    val groups by viewModel.groups.collectAsStateWithLifecycle()
+    val groups         by viewModel.groups.collectAsStateWithLifecycle()
+    val archivedGroups by viewModel.archivedGroups.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
     var searchActive by remember { mutableStateOf(false) }
 
@@ -72,9 +77,10 @@ fun GroupsScreen(
         onDispose { viewModel.stopPolling() }
     }
 
-    val filteredGroups = remember(groups, searchQuery) {
-        if (searchQuery.isBlank()) groups
-        else groups.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    val sourceList = if (archivedOnly) archivedGroups else groups
+    val filteredGroups = remember(sourceList, searchQuery) {
+        if (searchQuery.isBlank()) sourceList
+        else sourceList.filter { it.name.contains(searchQuery, ignoreCase = true) }
     }
 
     val settledCount = filteredGroups.count { it.balance == 0.0 }
@@ -87,7 +93,7 @@ fun GroupsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp),
-            contentPadding = PaddingValues(top = 156.dp, bottom = 120.dp)
+            contentPadding = PaddingValues(top = 156.dp, bottom = if (archivedOnly) 32.dp else 120.dp)
         ) {
 
             // ── Stats row ─────────────────────────────────────────────────
@@ -96,11 +102,75 @@ fun GroupsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    StatPill(label = "${filteredGroups.size} Groups", color = Primary)
-                    StatPill(label = "$activeCount Active", color = Secondary)
-                    StatPill(label = "$settledCount Settled", color = OutlineVariant)
+                    StatPill(
+                        label = "${filteredGroups.size} ${if (archivedOnly) "Archived" else "Groups"}",
+                        color = if (archivedOnly) OnSurfaceVariant else Primary
+                    )
+                    if (!archivedOnly) {
+                        StatPill(label = "$activeCount Active", color = Secondary)
+                        StatPill(label = "$settledCount Settled", color = OutlineVariant)
+                    }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            // ── Archived card (only on normal groups screen) ──────────────
+            if (!archivedOnly && archivedGroups.isNotEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(SurfaceLowest)
+                            .clickable { onNavigateToArchived() }
+                            .padding(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(OnSurfaceVariant.copy(alpha = 0.08f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Archive,
+                                        contentDescription = null,
+                                        tint = OnSurfaceVariant,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = "Archived",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = OnSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${archivedGroups.size} group${if (archivedGroups.size > 1) "s" else ""}",
+                                        fontSize = 12.sp,
+                                        color = OnSurfaceVariant
+                                    )
+                                }
+                            }
+                            Text(
+                                text = archivedGroups.take(3).joinToString("  ") { it.emoji },
+                                fontSize = 20.sp
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
             }
 
             // ── Group list ────────────────────────────────────────────────
@@ -112,17 +182,21 @@ fun GroupsScreen(
                             .padding(top = 60.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(text = "🔍", fontSize = 48.sp)
+                        Text(
+                            text = if (archivedOnly) "📦" else "🔍",
+                            fontSize = 48.sp
+                        )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "No groups found",
+                            text = if (archivedOnly) "No archived groups" else "No groups found",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = OnSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Try a different search term",
+                            text = if (archivedOnly) "Archive a group from its settings"
+                                   else "Try a different search term",
                             fontSize = 14.sp,
                             color = OnSurfaceVariant
                         )
@@ -152,16 +226,22 @@ fun GroupsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(70.dp)
-                    .padding(horizontal = 24.dp),
+                    .padding(horizontal = if (archivedOnly) 8.dp else 24.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (archivedOnly) {
+                    IconButton(onClick = onNavigateToHome) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Primary)
+                    }
+                }
                 Text(
-                    text = "My Groups",
+                    text = if (archivedOnly) "Archived Groups" else "My Groups",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Black,
                     color = Primary,
-                    letterSpacing = (-0.5).sp
+                    letterSpacing = (-0.5).sp,
+                    modifier = if (archivedOnly) Modifier.weight(1f).padding(start = 4.dp) else Modifier
                 )
                 Box(
                     modifier = Modifier
@@ -225,36 +305,38 @@ fun GroupsScreen(
         }
 
         // ── FAB ───────────────────────────────────────────────────────────
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 24.dp, bottom = 110.dp)
-                .size(60.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(
-                    Brush.linearGradient(colors = listOf(Primary, PrimaryContainer))
+        if (!archivedOnly) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 24.dp, bottom = 110.dp)
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(
+                        Brush.linearGradient(colors = listOf(Primary, PrimaryContainer))
+                    )
+                    .clickable { onNavigateToCreateGroup() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "New group",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
                 )
-                .clickable { onNavigateToCreateGroup() },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "New group",
-                tint = Color.White,
-                modifier = Modifier.size(28.dp)
+            }
+
+            // ── Bottom Navigation ─────────────────────────────────────────
+            GroupsBottomNav(
+                onTabSelected = { index ->
+                    when (index) {
+                        0 -> onNavigateToHome()
+                        3 -> onNavigateToProfile()
+                    }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
-
-        // ── Bottom Navigation ─────────────────────────────────────────────
-        GroupsBottomNav(
-            onTabSelected = { index ->
-                when (index) {
-                    0 -> onNavigateToHome()
-                    3 -> onNavigateToProfile()
-                }
-            },
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
     }
 }
 

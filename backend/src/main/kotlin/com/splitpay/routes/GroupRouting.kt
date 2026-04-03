@@ -22,6 +22,11 @@ import java.util.UUID
     val toUserId: String
 )
 
+@Serializable data class UpdateGroupRequest(
+    val name: String? = null,
+    val description: String? = null
+)
+
 // ── Response models ────────────────────────────────────────────────────────
 @Serializable data class GroupResponse(
     val id: String,
@@ -58,10 +63,17 @@ fun Route.groupRoutes() {
                 call.respond(HttpStatusCode.Created, group.toResponse())
             }
 
-            // GET /groups — list my groups
+            // GET /groups — list my active groups
             get {
                 val userId = call.currentUserId()
                 val groups = GroupRepository.findByUser(userId).map { it.toResponse() }
+                call.respond(groups)
+            }
+
+            // GET /groups/archived — list my archived groups
+            get("/archived") {
+                val userId = call.currentUserId()
+                val groups = GroupRepository.findArchivedByUser(userId).map { it.toResponse() }
                 call.respond(groups)
             }
 
@@ -79,6 +91,37 @@ fun Route.groupRoutes() {
                         return@get call.respond(HttpStatusCode.Forbidden, MessageResponse("You are not a member of this group"))
 
                     call.respond(group.toResponse())
+                }
+
+                // PATCH /groups/:id — update name/description (admin only)
+                patch {
+                    val groupId = call.groupId() ?: return@patch
+                    val userId  = call.currentUserId()
+                    val body    = call.receive<UpdateGroupRequest>()
+
+                    if (!GroupRepository.isAdmin(groupId, userId))
+                        return@patch call.respond(HttpStatusCode.Forbidden, MessageResponse("Only admins can edit the group"))
+
+                    val success = GroupRepository.update(groupId, body.name, body.description)
+                    if (success) {
+                        val group = GroupRepository.findById(groupId)!!
+                        call.respond(HttpStatusCode.OK, group.toResponse())
+                    } else {
+                        call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
+                    }
+                }
+
+                // DELETE /groups/:id — delete group permanently (admin only)
+                delete {
+                    val groupId = call.groupId() ?: return@delete
+                    val userId  = call.currentUserId()
+
+                    if (!GroupRepository.isAdmin(groupId, userId))
+                        return@delete call.respond(HttpStatusCode.Forbidden, MessageResponse("Only admins can delete the group"))
+
+                    val success = GroupRepository.delete(groupId)
+                    if (success) call.respond(HttpStatusCode.OK, MessageResponse("Group deleted"))
+                    else call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
                 }
 
                 // POST /groups/:id/members — add a user directly (admin only)
@@ -222,6 +265,19 @@ fun Route.groupRoutes() {
 
                     val success = GroupRepository.archive(groupId)
                     if (success) call.respond(HttpStatusCode.OK, MessageResponse("Group archived successfully"))
+                    else call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
+                }
+
+                // PATCH /groups/:id/unarchive
+                patch("/unarchive") {
+                    val groupId = call.groupId() ?: return@patch
+                    val userId  = call.currentUserId()
+
+                    if (!GroupRepository.isAdmin(groupId, userId))
+                        return@patch call.respond(HttpStatusCode.Forbidden, MessageResponse("Only admins can unarchive the group"))
+
+                    val success = GroupRepository.unarchive(groupId)
+                    if (success) call.respond(HttpStatusCode.OK, MessageResponse("Group unarchived successfully"))
                     else call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
                 }
             }

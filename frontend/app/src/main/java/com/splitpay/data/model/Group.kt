@@ -7,5 +7,6 @@ data class Group(
     val memberCount: Int = members.size,
     val balance: Double,        // positif = on te doit, négatif = tu dois
     val lastActivity: String,
-    val emoji: String = "💰"
+    val emoji: String = "💰",
+    val isArchived: Boolean = false
 )

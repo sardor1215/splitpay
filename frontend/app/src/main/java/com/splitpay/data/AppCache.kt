@@ -16,6 +16,7 @@ object AppCache {
 
     // Groups list (Home + Groups screens)
     var groups: List<Group>? = null
+    var archivedGroups: List<Group>? = null
 
     // Per-group detail + members (GroupDetailScreen)
     val groupDetails: MutableMap<String, Group> = mutableMapOf()
@@ -41,6 +42,7 @@ object AppCache {
         groupDetails.remove(groupId)
         groupMembers.remove(groupId)
         groups = null
+        archivedGroups = null
     }
 
     /** Called on logout — keeps all cached data in memory so reconnecting
@@ -55,6 +57,7 @@ object AppCache {
     fun clearAll() {
         ownerId = null
         groups = null
+        archivedGroups = null
         groupDetails.clear()
         groupMembers.clear()
         contacts = null

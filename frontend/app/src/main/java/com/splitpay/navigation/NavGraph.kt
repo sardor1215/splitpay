@@ -76,6 +76,9 @@ fun NavGraph(navController: NavHostController) {
                 onNavigateToGroups = {
                     navController.navigate(Screen.Groups.route)
                 },
+                onNavigateToArchivedGroups = {
+                    navController.navigate(Screen.ArchivedGroups.route)
+                },
                 onNavigateToCreateGroup = {
                     navController.navigate(Screen.CreateGroup.route)
                 },
@@ -103,6 +106,25 @@ fun NavGraph(navController: NavHostController) {
                 onNavigateToCreateGroup = {
                     navController.navigate(Screen.CreateGroup.route)
                 },
+                onNavigateToArchived = {
+                    navController.navigate(Screen.ArchivedGroups.route)
+                },
+                viewModel = homeViewModel
+            )
+        }
+
+        // ─── Archived Groups ─────────────────────────────────
+        composable(Screen.ArchivedGroups.route) {
+            GroupsScreen(
+                onNavigateToHome = { navController.popBackStack() },
+                onNavigateToGroup = { groupId ->
+                    navController.navigate(Screen.GroupDetail.createRoute(groupId))
+                },
+                onNavigateToProfile = {
+                    navController.navigate(Screen.Profile.route)
+                },
+                onNavigateToCreateGroup = {},
+                archivedOnly = true,
                 viewModel = homeViewModel
             )
         }
