@@ -62,7 +62,19 @@ fun AddExpenseScreen(
     val paidBy       by viewModel.paidBy.collectAsStateWithLifecycle()
     val splitMode    by viewModel.splitMode.collectAsStateWithLifecycle()
     val participants by viewModel.participants.collectAsStateWithLifecycle()
+    val isLoading    by viewModel.isLoading.collectAsStateWithLifecycle()
+    val error        by viewModel.error.collectAsStateWithLifecycle()
     var showPaidBySheet by remember { mutableStateOf(false) }
+
+    // Error dialog
+    if (error != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearError() },
+            title = { Text("Error") },
+            text  = { Text(error!!) },
+            confirmButton = { TextButton(onClick = { viewModel.clearError() }) { Text("OK") } }
+        )
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // ── Paid By bottom sheet ──────────────────────────────────────────────
@@ -542,14 +554,15 @@ fun AddExpenseScreen(
                     color = Primary,
                     letterSpacing = (-0.5).sp
                 )
-                TextButton(onClick = {
-                    viewModel.saveExpense { onNavigateBack() }
-                }) {
+                TextButton(
+                    onClick = { viewModel.saveExpense { onNavigateBack() } },
+                    enabled = !isLoading
+                ) {
                     Text(
                         text = "Save",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Primary
+                        color = if (isLoading) Primary.copy(alpha = 0.4f) else Primary
                     )
                 }
             }
@@ -573,15 +586,23 @@ fun AddExpenseScreen(
                             colors = listOf(Primary, PrimaryContainer)
                         )
                     )
-                    .clickable { viewModel.saveExpense { onNavigateBack() } },
+                    .clickable(enabled = !isLoading) { viewModel.saveExpense { onNavigateBack() } },
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Save Expense",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(24.dp)
+                    )
+                } else {
+                    Text(
+                        text = "Save Expense",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
             }
         }
     }

@@ -6,6 +6,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.splitpay.data.AppCache
 import com.splitpay.data.model.Expense
+import com.splitpay.data.model.Expense as ExpenseModel
 import com.splitpay.data.model.Group
 import com.splitpay.network.AddMemberRequest
 import com.splitpay.network.PhoneLookupRequest
@@ -123,7 +124,42 @@ class GroupDetailViewModel(
             AppCache.groupMembers[groupId]?.let { _groupMembers.value = it }
             _isLoading.value = _group.value == null
             fetchGroup(groupId)
+            loadExpenses(groupId)
             _isLoading.value = false
+        }
+    }
+
+    fun loadExpenses(groupId: String) {
+        viewModelScope.launch {
+            // Serve cache immediately
+            AppCache.expensesByGroup[groupId]?.let { _expenses.value = it }
+            try {
+                val response = api.getExpenses(groupId)
+                if (response.isSuccessful) {
+                    val currentUserId = tokenManager.getUserId() ?: ""
+                    val fresh = response.body()?.map { e ->
+                        val myShare = e.participants.find { it.userId == currentUserId }?.share ?: 0.0
+                        val yourShare = if (e.paidByUserId == currentUserId) {
+                            // You paid — others owe you
+                            e.amount - myShare
+                        } else {
+                            // Someone else paid — you owe your share
+                            -myShare
+                        }
+                        ExpenseModel(
+                            id        = e.id,
+                            title     = e.title,
+                            amount    = e.amount,
+                            paidBy    = e.paidByName,
+                            date      = e.createdAt,
+                            yourShare = yourShare
+                        )
+                    } ?: emptyList()
+                    AppCache.expensesByGroup[groupId] = fresh
+                    _expenses.value = fresh
+                    _totalSpending.value = fresh.sumOf { it.amount }
+                }
+            } catch (_: Exception) { }
         }
     }
 

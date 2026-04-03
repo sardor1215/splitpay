@@ -76,4 +76,11 @@ interface ApiService {
     // ── User lookup ───────────────────────────────────────────────────────
     @POST("users/lookup")
     suspend fun lookupUsers(@Body request: PhoneLookupRequest): Response<List<UserLookupResult>>
+
+    // ── Expenses ──────────────────────────────────────────────────────────
+    @POST("groups/{groupId}/expenses")
+    suspend fun createExpense(@Path("groupId") groupId: String, @Body request: CreateExpenseRequest): Response<ExpenseResponse>
+
+    @GET("groups/{groupId}/expenses")
+    suspend fun getExpenses(@Path("groupId") groupId: String): Response<List<ExpenseResponse>>
 }

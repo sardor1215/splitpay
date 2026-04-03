@@ -106,3 +106,35 @@ data class MessageResponse(
 data class ApiError(
     val error: String
 )
+
+// ── Expenses ──────────────────────────────────────────────────────────────────
+
+data class CreateExpenseRequest(
+    @SerializedName("title")          val title: String,
+    @SerializedName("amount")         val amount: Double,
+    @SerializedName("paidByUserId")   val paidByUserId: String,
+    @SerializedName("splitMode")      val splitMode: String = "equally",
+    @SerializedName("participants")   val participants: List<ExpenseParticipantRequest>
+)
+
+data class ExpenseParticipantRequest(
+    @SerializedName("userId") val userId: String,
+    @SerializedName("share")  val share: Double
+)
+
+data class ExpenseResponse(
+    @SerializedName("id")           val id: String,
+    @SerializedName("title")        val title: String,
+    @SerializedName("amount")       val amount: Double,
+    @SerializedName("paidByUserId") val paidByUserId: String,
+    @SerializedName("paidByName")   val paidByName: String,
+    @SerializedName("splitMode")    val splitMode: String,
+    @SerializedName("createdAt")    val createdAt: String,
+    @SerializedName("participants") val participants: List<ExpenseParticipantResponse>
+)
+
+data class ExpenseParticipantResponse(
+    @SerializedName("userId") val userId: String,
+    @SerializedName("name")   val name: String,
+    @SerializedName("share")  val share: Double
+)

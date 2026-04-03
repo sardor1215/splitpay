@@ -22,6 +22,9 @@ object AppCache {
     val groupDetails: MutableMap<String, Group> = mutableMapOf()
     val groupMembers: MutableMap<String, List<GroupMember>> = mutableMapOf()
 
+    // Per-group expenses (GroupDetailScreen)
+    val expensesByGroup: MutableMap<String, List<com.splitpay.data.model.Expense>> = mutableMapOf()
+
     // Device contacts for CreateGroupScreen
     var contacts: List<Contact>? = null
 
@@ -60,6 +63,7 @@ object AppCache {
         archivedGroups = null
         groupDetails.clear()
         groupMembers.clear()
+        expensesByGroup.clear()
         contacts = null
         contactsWithStatus = null
     }
