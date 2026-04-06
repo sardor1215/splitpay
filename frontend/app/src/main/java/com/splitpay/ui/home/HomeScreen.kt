@@ -250,7 +250,7 @@ fun HomeScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "A",
+                        text = homeViewModel.userInitial,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp

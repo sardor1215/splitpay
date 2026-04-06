@@ -37,6 +37,7 @@ object UserRepository {
             it[Users.phone]         = phone
             it[Users.passwordHash]  = hash
             it[Users.isVerified]    = true   // auto-verified for now
+            it[Users.createdAt]     = OffsetDateTime.now()
         }[Users.id]
         findById(id)!!
     }
@@ -48,6 +49,7 @@ object UserRepository {
             it[Users.googleId]   = googleId
             it[Users.avatarUrl]  = avatarUrl
             it[Users.isVerified] = true
+            it[Users.createdAt]  = OffsetDateTime.now()
         }[Users.id]
         findById(id)!!
     }

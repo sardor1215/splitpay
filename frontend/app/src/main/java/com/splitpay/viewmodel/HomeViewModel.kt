@@ -18,6 +18,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val tokenManager = TokenManager(application)
     private val api          = RetrofitClient.build(tokenManager)
 
+    val userInitial: String
+        get() = tokenManager.getUserName()?.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+
     private val _groups = MutableStateFlow<List<Group>>(AppCache.groups ?: emptyList())
     val groups: StateFlow<List<Group>> = _groups
 

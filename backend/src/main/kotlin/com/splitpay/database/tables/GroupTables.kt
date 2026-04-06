@@ -26,3 +26,22 @@ object GroupMembers : Table("group_members") {
 
     override val primaryKey = PrimaryKey(id)
 }
+
+object Expenses : Table("expenses") {
+    val id        = uuid("id").autoGenerate()
+    val groupId   = uuid("group_id").references(ExpenseGroups.id)
+    val title     = varchar("title", 255)
+    val amount    = decimal("amount", 12, 2)
+    val paidBy    = uuid("paid_by").references(Users.id)
+    val splitMode = varchar("split_mode", 20).default("equally")
+    val createdAt = timestampWithTimeZone("created_at")
+    override val primaryKey = PrimaryKey(id)
+}
+
+object ExpenseParticipants : Table("expense_participants") {
+    val id        = uuid("id").autoGenerate()
+    val expenseId = uuid("expense_id").references(Expenses.id)
+    val userId    = uuid("user_id").references(Users.id)
+    val share     = decimal("share", 12, 2)
+    override val primaryKey = PrimaryKey(id)
+}

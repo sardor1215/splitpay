@@ -33,18 +33,21 @@ object GroupRepository {
     // ── Create ─────────────────────────────────────────────────────────
     fun create(name: String, description: String?, createdBy: UUID): Group = loggedTransaction {
         val token = UUID.randomUUID().toString()
+        val now = OffsetDateTime.now()
         val id = ExpenseGroups.insert {
             it[ExpenseGroups.name]        = name
             it[ExpenseGroups.description] = description
             it[ExpenseGroups.createdBy]   = createdBy
             it[ExpenseGroups.inviteToken] = token
+            it[ExpenseGroups.createdAt]   = now
         }[ExpenseGroups.id]
 
         // Creator becomes admin
         GroupMembers.insert {
-            it[GroupMembers.groupId] = id
-            it[GroupMembers.userId]  = createdBy
-            it[GroupMembers.role]    = "admin"
+            it[GroupMembers.groupId]  = id
+            it[GroupMembers.userId]   = createdBy
+            it[GroupMembers.role]     = "admin"
+            it[GroupMembers.joinedAt] = now
         }
 
         findById(id)!!
@@ -101,9 +104,10 @@ object GroupRepository {
     fun addMember(groupId: UUID, userId: UUID): Boolean = loggedTransaction {
         if (isMember(groupId, userId)) return@loggedTransaction false
         GroupMembers.insert {
-            it[GroupMembers.groupId] = groupId
-            it[GroupMembers.userId]  = userId
-            it[GroupMembers.role]    = "member"
+            it[GroupMembers.groupId]  = groupId
+            it[GroupMembers.userId]   = userId
+            it[GroupMembers.role]     = "member"
+            it[GroupMembers.joinedAt] = OffsetDateTime.now()
         }
         true
     }
@@ -120,9 +124,10 @@ object GroupRepository {
         if (isMember(group.id, userId)) return@loggedTransaction group
 
         GroupMembers.insert {
-            it[GroupMembers.groupId] = group.id
-            it[GroupMembers.userId]  = userId
-            it[GroupMembers.role]    = "member"
+            it[GroupMembers.groupId]  = group.id
+            it[GroupMembers.userId]   = userId
+            it[GroupMembers.role]     = "member"
+            it[GroupMembers.joinedAt] = OffsetDateTime.now()
         }
         group
     }

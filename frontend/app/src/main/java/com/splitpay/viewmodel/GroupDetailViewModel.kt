@@ -63,7 +63,7 @@ class GroupDetailViewModel(
     private val _group = MutableStateFlow<Group?>(AppCache.groupDetails[cachedGroupId])
     val group: StateFlow<Group?> = _group
 
-    private val _expenses = MutableStateFlow<List<Expense>>(emptyList())
+    private val _expenses = MutableStateFlow<List<Expense>>(AppCache.expensesByGroup[cachedGroupId] ?: emptyList())
     val expenses: StateFlow<List<Expense>> = _expenses
 
     private val _settlements = MutableStateFlow<List<Settlement>>(emptyList())
@@ -72,7 +72,9 @@ class GroupDetailViewModel(
     private val _yourBalance = MutableStateFlow(0.0)
     val yourBalance: StateFlow<Double> = _yourBalance
 
-    private val _totalSpending = MutableStateFlow(0.0)
+    private val _totalSpending = MutableStateFlow(
+        AppCache.expensesByGroup[cachedGroupId]?.sumOf { it.amount } ?: 0.0
+    )
     val totalSpending: StateFlow<Double> = _totalSpending
 
     private val _groupMembers = MutableStateFlow<List<GroupMember>>(
