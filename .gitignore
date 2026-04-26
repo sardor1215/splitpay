@@ -31,3 +31,10 @@ google-services.json
 
 #env
 run.ps1
+
+# Backend logs & Kotlin compiler errors
+backend/logs/
+backend/.kotlin/
+
+# Misc
+project_file_structure.txt
