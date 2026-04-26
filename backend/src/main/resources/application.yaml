@@ -2,6 +2,9 @@ ktor:
   deployment:
     port: 8080
     host: 0.0.0.0
+    watch:
+      - com/splitpay
+  development: true
   application:
     modules:
       - com.splitpay.ApplicationKt.module

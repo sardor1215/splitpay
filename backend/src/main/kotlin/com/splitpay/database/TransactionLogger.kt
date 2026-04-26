@@ -4,7 +4,6 @@ import org.jetbrains.exposed.sql.SqlLogger
 import org.jetbrains.exposed.sql.Transaction
 import org.jetbrains.exposed.sql.addLogger
 import org.jetbrains.exposed.sql.statements.StatementContext
-import org.jetbrains.exposed.sql.statements.expandArgs
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 
@@ -12,8 +11,7 @@ object SplitPaySqlLogger : SqlLogger {
     private val logger = LoggerFactory.getLogger("com.splitpay.database.SQL")
 
     override fun log(context: StatementContext, transaction: Transaction) {
-        val sql = context.expandArgs(transaction)
-        logger.debug("SQL → $sql")
+        logger.debug("SQL → ${context.sql(transaction)}")
     }
 }
 

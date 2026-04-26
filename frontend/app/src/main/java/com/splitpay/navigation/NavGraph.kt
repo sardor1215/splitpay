@@ -1,14 +1,11 @@
 package com.splitpay.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
-import com.splitpay.network.TokenManager
 import com.splitpay.ui.auth.LoginScreen
 import com.splitpay.ui.auth.RegisterScreen
 import com.splitpay.ui.groups.CreateGroupScreen
@@ -18,17 +15,22 @@ import com.splitpay.ui.expense.AddExpenseScreen
 import com.splitpay.ui.group.GroupDetailScreen
 import com.splitpay.ui.profile.ProfileScreen
 import com.splitpay.ui.settlement.SettlementScreen
-import com.splitpay.viewmodel.HomeViewModel
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import com.splitpay.data.local.TokenManager
+
 
 @Composable
 fun NavGraph(navController: NavHostController) {
 
     val context = LocalContext.current
-    val tokenManager = TokenManager(context)
-    val startDestination = if (tokenManager.isLoggedIn()) Screen.Home.route else Screen.Login.route
-
-    // Instance partagée entre HomeScreen et GroupsScreen
-    val homeViewModel: HomeViewModel = viewModel()
+    val tokenManager = remember { TokenManager(context) }
+    
+    val startDestination = if (tokenManager.isLoggedIn()) {
+        Screen.Home.route
+    } else {
+        Screen.Login.route
+    }
 
     NavHost(
         navController = navController,
@@ -76,16 +78,12 @@ fun NavGraph(navController: NavHostController) {
                 onNavigateToGroups = {
                     navController.navigate(Screen.Groups.route)
                 },
-                onNavigateToArchivedGroups = {
-                    navController.navigate(Screen.ArchivedGroups.route)
-                },
                 onNavigateToCreateGroup = {
                     navController.navigate(Screen.CreateGroup.route)
                 },
                 onNavigateToSettlement = { groupId ->
                     navController.navigate(Screen.Settlement.createRoute(groupId))
-                },
-                homeViewModel = homeViewModel
+                }
             )
         }
 
@@ -105,27 +103,7 @@ fun NavGraph(navController: NavHostController) {
                 },
                 onNavigateToCreateGroup = {
                     navController.navigate(Screen.CreateGroup.route)
-                },
-                onNavigateToArchived = {
-                    navController.navigate(Screen.ArchivedGroups.route)
-                },
-                viewModel = homeViewModel
-            )
-        }
-
-        // ─── Archived Groups ─────────────────────────────────
-        composable(Screen.ArchivedGroups.route) {
-            GroupsScreen(
-                onNavigateToHome = { navController.popBackStack() },
-                onNavigateToGroup = { groupId ->
-                    navController.navigate(Screen.GroupDetail.createRoute(groupId))
-                },
-                onNavigateToProfile = {
-                    navController.navigate(Screen.Profile.route)
-                },
-                onNavigateToCreateGroup = {},
-                archivedOnly = true,
-                viewModel = homeViewModel
+                }
             )
         }
 
@@ -134,7 +112,6 @@ fun NavGraph(navController: NavHostController) {
             CreateGroupScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onGroupCreated = { groupId ->
-                    homeViewModel.loadGroups()   // update Home + Groups list immediately
                     navController.navigate(Screen.GroupDetail.createRoute(groupId)) {
                         popUpTo(Screen.CreateGroup.route) { inclusive = true }
                     }

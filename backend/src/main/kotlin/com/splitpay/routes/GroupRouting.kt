@@ -1,5 +1,6 @@
 package com.splitpay.routes
 
+import com.splitpay.repository.ExpenseRepository
 import com.splitpay.repository.GroupRepository
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -13,6 +14,7 @@ import java.util.UUID
 // ── Request models ─────────────────────────────────────────────────────────
 @Serializable data class CreateGroupRequest(
     val name: String,
+    val emoji: String = "💰",
     val description: String? = null
 )
 
@@ -22,20 +24,18 @@ import java.util.UUID
     val toUserId: String
 )
 
-@Serializable data class UpdateGroupRequest(
-    val name: String? = null,
-    val description: String? = null
-)
-
 // ── Response models ────────────────────────────────────────────────────────
 @Serializable data class GroupResponse(
     val id: String,
     val name: String,
+    val emoji: String,
     val description: String?,
     val createdBy: String,
     val isArchived: Boolean,
     val inviteToken: String?,
-    val memberCount: Int
+    val memberCount: Int,
+    val lastActivityAt: String,
+    val userBalance: Double = 0.0
 )
 
 @Serializable data class GroupMemberResponse(
@@ -43,6 +43,12 @@ import java.util.UUID
     val name: String,
     val role: String,
     val joinedAt: String
+)
+
+@Serializable data class UpdateGroupRequest(
+    val name: String,
+    val emoji: String? = null,
+    val description: String? = null
 )
 
 fun Route.groupRoutes() {
@@ -59,22 +65,26 @@ fun Route.groupRoutes() {
                 if (body.name.isBlank())
                     return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Group name is required"))
 
-                val group = GroupRepository.create(body.name, body.description, userId)
+                val group = GroupRepository.create(body.name, body.emoji, body.description, userId)
                 call.respond(HttpStatusCode.Created, group.toResponse())
             }
 
-            // GET /groups — list my active groups
+            // GET /groups — list my groups
             get {
                 val userId = call.currentUserId()
-                val groups = GroupRepository.findByUser(userId).map { it.toResponse() }
-                call.respond(groups)
-            }
-
-            // GET /groups/archived — list my archived groups
-            get("/archived") {
-                val userId = call.currentUserId()
-                val groups = GroupRepository.findArchivedByUser(userId).map { it.toResponse() }
-                call.respond(groups)
+                val groups = GroupRepository.findByUser(userId)
+                val ids = groups.map { it.id }
+                val counts       = GroupRepository.getMemberCounts(ids)
+                val lastActs     = GroupRepository.getLastActivities(ids)
+                val userBalances = ExpenseRepository.calculateUserBalancesForGroups(ids, userId)
+                val sorted = groups.sortedByDescending { lastActs[it.id] ?: it.createdAt }
+                call.respond(sorted.map {
+                    it.toResponse(
+                        memberCount    = counts[it.id] ?: 1,
+                        lastActivityAt = lastActs[it.id] ?: it.createdAt,
+                        userBalance    = userBalances[it.id] ?: 0.0
+                    )
+                })
             }
 
             route("/{groupId}") {
@@ -93,62 +103,6 @@ fun Route.groupRoutes() {
                     call.respond(group.toResponse())
                 }
 
-                // PATCH /groups/:id — update name/description (admin only)
-                patch {
-                    val groupId = call.groupId() ?: return@patch
-                    val userId  = call.currentUserId()
-                    val body    = call.receive<UpdateGroupRequest>()
-
-                    if (!GroupRepository.isAdmin(groupId, userId))
-                        return@patch call.respond(HttpStatusCode.Forbidden, MessageResponse("Only admins can edit the group"))
-
-                    val success = GroupRepository.update(groupId, body.name, body.description)
-                    if (success) {
-                        val group = GroupRepository.findById(groupId)!!
-                        call.respond(HttpStatusCode.OK, group.toResponse())
-                    } else {
-                        call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
-                    }
-                }
-
-                // DELETE /groups/:id — delete group permanently (admin only)
-                delete {
-                    val groupId = call.groupId() ?: return@delete
-                    val userId  = call.currentUserId()
-
-                    if (!GroupRepository.isAdmin(groupId, userId))
-                        return@delete call.respond(HttpStatusCode.Forbidden, MessageResponse("Only admins can delete the group"))
-
-                    val success = GroupRepository.delete(groupId)
-                    if (success) call.respond(HttpStatusCode.OK, MessageResponse("Group deleted"))
-                    else call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
-                }
-
-                // POST /groups/:id/members — add a user directly (admin only)
-                post("/members") {
-                    val groupId = call.groupId() ?: return@post
-                    val adminId = call.currentUserId()
-                    val body    = call.receive<AddMemberRequest>()
-                    val userId  = runCatching { UUID.fromString(body.userId) }.getOrNull()
-                        ?: return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid user ID"))
-
-                    if (!GroupRepository.isAdmin(groupId, adminId))
-                        return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Only admins can add members"))
-
-                    if (GroupRepository.isMember(groupId, userId))
-                        return@post call.respond(HttpStatusCode.Conflict, MessageResponse("User is already a member"))
-
-                    val group = GroupRepository.findById(groupId)
-                        ?: return@post call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
-
-                    val memberCount = GroupRepository.getMemberCount(groupId)
-                    if (memberCount >= group.maxMembers)
-                        return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Group is full (max ${group.maxMembers} members)"))
-
-                    GroupRepository.addMember(groupId, userId)
-                    call.respond(HttpStatusCode.OK, MessageResponse("Member added"))
-                }
-
                 // GET /groups/:id/members
                 get("/members") {
                     val groupId = call.groupId() ?: return@get
@@ -157,14 +111,8 @@ fun Route.groupRoutes() {
                     if (!GroupRepository.isMember(groupId, userId))
                         return@get call.respond(HttpStatusCode.Forbidden, MessageResponse("Not a member"))
 
-                    val members = GroupRepository.getMembers(groupId).map { m ->
-                        val user = com.splitpay.repository.UserRepository.findById(m.userId)
-                        GroupMemberResponse(
-                            userId   = m.userId.toString(),
-                            name     = user?.name ?: "Unknown",
-                            role     = m.role,
-                            joinedAt = m.joinedAt.toString()
-                        )
+                    val members = GroupRepository.getMembers(groupId).map {
+                        GroupMemberResponse(it.userId.toString(), it.name, it.role, it.joinedAt.toString())
                     }
                     call.respond(members)
                 }
@@ -195,6 +143,24 @@ fun Route.groupRoutes() {
                     val token   = GroupRepository.regenerateInviteToken(groupId)
                     val baseUrl = System.getenv("BASE_URL") ?: "http://localhost:8080"
                     call.respond(mapOf("inviteLink" to "$baseUrl/groups/join/$token"))
+                }
+
+                // POST /groups/:id/members — add member directly by userId (admin only)
+                post("/members") {
+                    val groupId  = call.groupId() ?: return@post
+                    val adminId  = call.currentUserId()
+                    val body     = call.receive<AddMemberRequest>()
+                    val memberId = runCatching { UUID.fromString(body.userId) }.getOrNull()
+                        ?: return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid user ID"))
+
+                    if (!GroupRepository.isAdmin(groupId, adminId))
+                        return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Only admins can add members"))
+
+                    if (GroupRepository.isMember(groupId, memberId))
+                        return@post call.respond(HttpStatusCode.Conflict, MessageResponse("User is already a member"))
+
+                    GroupRepository.addMember(groupId, memberId)
+                    call.respond(HttpStatusCode.OK, MessageResponse("Member added"))
                 }
 
                 // DELETE /groups/:id/members/:userId — remove member
@@ -267,18 +233,23 @@ fun Route.groupRoutes() {
                     if (success) call.respond(HttpStatusCode.OK, MessageResponse("Group archived successfully"))
                     else call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
                 }
-
-                // PATCH /groups/:id/unarchive
-                patch("/unarchive") {
+                
+                // PATCH /groups/:id — update group
+                patch {
                     val groupId = call.groupId() ?: return@patch
                     val userId  = call.currentUserId()
 
-                    if (!GroupRepository.isAdmin(groupId, userId))
-                        return@patch call.respond(HttpStatusCode.Forbidden, MessageResponse("Only admins can unarchive the group"))
+                    if (!GroupRepository.isMember(groupId, userId))
+                        return@patch call.respond(HttpStatusCode.Forbidden, MessageResponse("Not a member"))
 
-                    val success = GroupRepository.unarchive(groupId)
-                    if (success) call.respond(HttpStatusCode.OK, MessageResponse("Group unarchived successfully"))
-                    else call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
+                    val body = call.receive<UpdateGroupRequest>()
+                    val success = GroupRepository.update(groupId, body.name, body.emoji, body.description)
+                    if (success) {
+                        val group = GroupRepository.findById(groupId)!!
+                        call.respond(group.toResponse())
+                    } else {
+                        call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
+                    }
                 }
             }
 
@@ -313,12 +284,19 @@ private suspend fun ApplicationCall.groupId(): UUID? {
     return id
 }
 
-private fun com.splitpay.repository.Group.toResponse() = GroupResponse(
-    id          = id.toString(),
-    name        = name,
-    description = description,
-    createdBy   = createdBy.toString(),
-    isArchived  = isArchived,
-    inviteToken = inviteToken,
-    memberCount = GroupRepository.getMemberCount(id)
+private fun com.splitpay.repository.Group.toResponse(
+    memberCount: Int = GroupRepository.getMemberCount(id),
+    lastActivityAt: java.time.OffsetDateTime = createdAt,
+    userBalance: Double = 0.0
+) = GroupResponse(
+    id             = id.toString(),
+    name           = name,
+    emoji          = emoji,
+    description    = description,
+    createdBy      = createdBy.toString(),
+    isArchived     = isArchived,
+    inviteToken    = inviteToken,
+    memberCount    = memberCount,
+    lastActivityAt = lastActivityAt.toString(),
+    userBalance    = userBalance
 )

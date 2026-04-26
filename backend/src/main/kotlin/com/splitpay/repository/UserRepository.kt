@@ -30,14 +30,13 @@ object UserRepository {
 
     // ── Create ────────────────────────────────────────────────────────────
     fun create(name: String, email: String, password: String, phone: String? = null): User = loggedTransaction {
-        val hash = BCrypt.hashpw(password, BCrypt.gensalt())
+        val hash = BCrypt.hashpw(password, BCrypt.gensalt(12))
         val id = Users.insert {
             it[Users.name]          = name
             it[Users.email]         = email
             it[Users.phone]         = phone
             it[Users.passwordHash]  = hash
             it[Users.isVerified]    = true   // auto-verified for now
-            it[Users.createdAt]     = OffsetDateTime.now()
         }[Users.id]
         findById(id)!!
     }
@@ -65,11 +64,6 @@ object UserRepository {
             .singleOrNull()?.toUser()
     }
 
-    fun findByPhone(phone: String): User? = loggedTransaction {
-        Users.select { (Users.phone eq phone) and (Users.isDeleted eq false) }
-            .singleOrNull()?.toUser()
-    }
-
     fun findByGoogleId(googleId: String): User? = loggedTransaction {
         Users.select { Users.googleId eq googleId }
             .singleOrNull()?.toUser()
@@ -85,18 +79,9 @@ object UserRepository {
             .singleOrNull()?.toUser()
     }
 
-    fun findByPhones(phones: List<String>): Map<String, User> = loggedTransaction {
-        if (phones.isEmpty()) return@loggedTransaction emptyMap()
-        val normalizedToOriginal = phones.associateBy { normalizePhone(it) }
-        Users.select { (Users.phone.isNotNull()) and (Users.isDeleted eq false) }
-            .mapNotNull { row ->
-                val dbPhone = row[Users.phone] ?: return@mapNotNull null
-                val dbNorm  = normalizePhone(dbPhone)
-                normalizedToOriginal[dbNorm]?.let { original -> original to row.toUser() }
-            }.toMap()
+    fun findByPhones(phones: List<String>): List<User> = loggedTransaction {
+        Users.select { Users.phone inList phones }.map { it.toUser() }
     }
-
-    private fun normalizePhone(phone: String) = phone.replace(Regex("[^+0-9]"), "")
 
     // ── Auth helpers ──────────────────────────────────────────────────────
     fun verifyPassword(user: User, password: String): Boolean =
@@ -123,7 +108,7 @@ object UserRepository {
             return@loggedTransaction false
         }
         Users.update({ Users.passwordResetToken eq token }) {
-            it[passwordHash]           = BCrypt.hashpw(newPassword, BCrypt.gensalt())
+            it[passwordHash]           = BCrypt.hashpw(newPassword, BCrypt.gensalt(12))
             it[passwordResetToken]     = null
             it[passwordResetExpiresAt] = null
         } > 0

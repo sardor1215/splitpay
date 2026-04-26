@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,8 +16,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,223 +49,76 @@ private val OnSurface         = Color(0xFF1A1C1E)
 private val OnSurfaceVariant  = Color(0xFF3F4949)
 private val OutlineVariant    = Color(0xFFBEC8C9)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddExpenseScreen(
     groupId: String,
     onNavigateBack: () -> Unit,
     viewModel: AddExpenseViewModel = viewModel()
 ) {
-    val amount       by viewModel.amount.collectAsStateWithLifecycle()
-    val description  by viewModel.description.collectAsStateWithLifecycle()
-    val paidBy       by viewModel.paidBy.collectAsStateWithLifecycle()
-    val splitMode    by viewModel.splitMode.collectAsStateWithLifecycle()
-    val participants by viewModel.participants.collectAsStateWithLifecycle()
-    val isLoading    by viewModel.isLoading.collectAsStateWithLifecycle()
-    val error        by viewModel.error.collectAsStateWithLifecycle()
-    var showPaidBySheet by remember { mutableStateOf(false) }
+    LaunchedEffect(groupId) { viewModel.loadParticipants(groupId) }
 
-    // Error dialog
-    if (error != null) {
+    val amount        by viewModel.amount.collectAsStateWithLifecycle()
+    val description   by viewModel.description.collectAsStateWithLifecycle()
+    val paidBy        by viewModel.paidBy.collectAsStateWithLifecycle()
+    val paidByUserId  by viewModel.paidByUserId.collectAsStateWithLifecycle()
+    val splitMode     by viewModel.splitMode.collectAsStateWithLifecycle()
+    val category      by viewModel.category.collectAsStateWithLifecycle()
+    val participants  by viewModel.participants.collectAsStateWithLifecycle()
+    var showPaidByDialog by remember { mutableStateOf(false) }
+
+    // ── Paid By dialog ────────────────────────────────────────────────────
+    if (showPaidByDialog) {
         AlertDialog(
-            onDismissRequest = { viewModel.clearError() },
-            title = { Text("Error") },
-            text  = { Text(error!!) },
-            confirmButton = { TextButton(onClick = { viewModel.clearError() }) { Text("OK") } }
-        )
-    }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    // ── Paid By bottom sheet ──────────────────────────────────────────────
-    if (showPaidBySheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showPaidBySheet = false },
-            sheetState = sheetState,
-            containerColor = SurfaceLowest,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 32.dp)
-            ) {
-                // Title
+            onDismissRequest = { showPaidByDialog = false },
+            title = {
                 Text(
                     text = "Who paid?",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Primary,
-                    letterSpacing = (-0.5).sp
+                    fontWeight = FontWeight.Bold,
+                    color = OnSurface
                 )
-                Text(
-                    text = "Select the person who covered this expense",
-                    fontSize = 13.sp,
-                    color = OnSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
-                )
-
-                // Search bar
-                var paidBySearch by remember { mutableStateOf("") }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(SurfaceLow)
-                        .padding(horizontal = 14.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = null,
-                        tint = OnSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    BasicTextField(
-                        value = paidBySearch,
-                        onValueChange = { paidBySearch = it },
-                        singleLine = true,
-                        textStyle = TextStyle(fontSize = 15.sp, color = OnSurface, fontWeight = FontWeight.Medium),
-                        cursorBrush = SolidColor(Primary),
-                        modifier = Modifier.weight(1f),
-                        decorationBox = { inner ->
-                            if (paidBySearch.isEmpty()) Text("Search…", fontSize = 15.sp, color = OutlineVariant)
-                            inner()
-                        }
-                    )
-                    if (paidBySearch.isNotEmpty()) {
-                        Box(
-                            modifier = Modifier.size(20.dp).clip(CircleShape).clickable { paidBySearch = "" },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Close, null, tint = OnSurfaceVariant, modifier = Modifier.size(14.dp))
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                val filteredParticipants = remember(participants, paidBySearch) {
-                    if (paidBySearch.isBlank()) participants
-                    else participants.filter { it.name.contains(paidBySearch, ignoreCase = true) }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    filteredParticipants.forEach { participant ->
-                        val isSelected = participant.name == paidBy
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    participants.forEach { p ->
+                        val isSelected = p.id == paidByUserId
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(18.dp))
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(
                                     if (isSelected) Primary.copy(alpha = 0.08f)
-                                    else Surface
+                                    else Color.Transparent
                                 )
-                                .then(
-                                    if (participant.isOnApp)
-                                        Modifier.clickable {
-                                            viewModel.onPaidByChange(participant.name)
-                                            showPaidBySheet = false
-                                        }
-                                    else Modifier
-                                )
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .clickable {
+                                    viewModel.onPaidByChange(p.id, p.name)
+                                    showPaidByDialog = false
+                                }
+                                .padding(horizontal = 12.dp, vertical = 14.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                // Avatar
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (participant.isOnApp) Primary.copy(alpha = 0.1f)
-                                            else OutlineVariant.copy(alpha = 0.2f)
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = participant.name.first().toString(),
-                                        fontSize = 17.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (participant.isOnApp) Primary else OnSurfaceVariant
-                                    )
-                                }
-                                Column {
-                                    Text(
-                                        text = participant.name,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (participant.isOnApp) OnSurface
-                                                else OnSurfaceVariant.copy(alpha = 0.5f)
-                                    )
-                                    if (!participant.isOnApp) {
-                                        Text(
-                                            text = "Not on SplitPay",
-                                            fontSize = 11.sp,
-                                            color = OutlineVariant
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (participant.isOnApp) {
-                                // Checkmark si sélectionné
-                                Box(
-                                    modifier = Modifier
-                                        .size(26.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isSelected) Primary else Color.Transparent)
-                                        .border(2.dp, if (isSelected) Primary else OutlineVariant, CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
-                                }
-                            } else {
-                                // Bouton Invite
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        .background(Primary.copy(alpha = 0.08f))
-                                        .clickable { /* TODO: envoyer invitation */ }
-                                        .padding(horizontal = 14.dp, vertical = 7.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.PersonAdd,
-                                            contentDescription = null,
-                                            tint = Primary,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Text(
-                                            text = "Invite",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Primary
-                                        )
-                                    }
-                                }
+                            Text(
+                                text = p.name,
+                                fontSize = 15.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Primary else OnSurface
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = Primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                     }
                 }
-            }
-        }
+            },
+            confirmButton = {},
+            containerColor = Surface,
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 
     Box(
@@ -389,7 +241,7 @@ fun AddExpenseScreen(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(SurfaceLow)
-                    .clickable { showPaidBySheet = true }
+                    .clickable { showPaidByDialog = true }
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -433,6 +285,56 @@ fun AddExpenseScreen(
                     contentDescription = null,
                     tint = Primary
                 )
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // ── Category ──────────────────────────────────────────────────
+            Column {
+                Text(
+                    text = "CATEGORY",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = OnSurfaceVariant.copy(alpha = 0.6f),
+                    letterSpacing = 1.5.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                val categories = listOf(
+                    "food" to "🍕", "transport" to "🚗", "accommodation" to "🏠",
+                    "entertainment" to "🎮", "shopping" to "🛒", "health" to "💊",
+                    "utilities" to "💡", "other" to "📦"
+                )
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(categories) { (key, emoji) ->
+                        val isSelected = category == key
+                        Box(
+                            modifier = Modifier
+                                .shadow(
+                                    elevation = if (isSelected) 4.dp else 0.dp,
+                                    shape = RoundedCornerShape(12.dp),
+                                    spotColor = Primary.copy(alpha = 0.12f)
+                                )
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) Primary else SurfaceLow)
+                                .clickable { viewModel.onCategoryChange(key) }
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = emoji, fontSize = 20.sp)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = key.replaceFirstChar { it.uppercase() },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isSelected) Color.White else OnSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(28.dp))
@@ -554,15 +456,14 @@ fun AddExpenseScreen(
                     color = Primary,
                     letterSpacing = (-0.5).sp
                 )
-                TextButton(
-                    onClick = { viewModel.saveExpense { onNavigateBack() } },
-                    enabled = !isLoading
-                ) {
+                TextButton(onClick = {
+                    viewModel.saveExpense(groupId) { onNavigateBack() }
+                }) {
                     Text(
                         text = "Save",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (isLoading) Primary.copy(alpha = 0.4f) else Primary
+                        color = Primary
                     )
                 }
             }
@@ -586,23 +487,15 @@ fun AddExpenseScreen(
                             colors = listOf(Primary, PrimaryContainer)
                         )
                     )
-                    .clickable(enabled = !isLoading) { viewModel.saveExpense { onNavigateBack() } },
+                    .clickable { viewModel.saveExpense(groupId) { onNavigateBack() } },
                 contentAlignment = Alignment.Center
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        color = Color.White,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(24.dp)
-                    )
-                } else {
-                    Text(
-                        text = "Save Expense",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                }
+                Text(
+                    text = "Save Expense",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
             }
         }
     }

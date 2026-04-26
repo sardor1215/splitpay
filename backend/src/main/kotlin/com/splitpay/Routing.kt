@@ -51,7 +51,7 @@ fun Application.configureRouting() {
         // Group routes
         groupRoutes()
 
-        // Expense routes
+        // Expense routes (expenses, balances, settlements)
         expenseRoutes()
     }
 }

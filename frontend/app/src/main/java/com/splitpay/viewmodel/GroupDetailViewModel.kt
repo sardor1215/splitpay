@@ -1,69 +1,50 @@
 package com.splitpay.viewmodel
 
 import android.app.Application
+import android.content.ContentResolver
+import android.provider.ContactsContract
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import com.splitpay.data.AppCache
+import com.splitpay.SplitPayApp
+import com.splitpay.data.local.AppCache
 import com.splitpay.data.model.Expense
-import com.splitpay.data.model.Expense as ExpenseModel
 import com.splitpay.data.model.Group
-import com.splitpay.network.AddMemberRequest
-import com.splitpay.network.PhoneLookupRequest
-import com.splitpay.network.RetrofitClient
-import com.splitpay.network.TokenManager
-import com.splitpay.network.UpdateGroupRequest
-import com.splitpay.util.ContactReader
+import com.splitpay.data.network.AddMemberRequest
+import com.splitpay.data.network.LookupRequest
+import com.splitpay.data.network.RetrofitClient
+import com.splitpay.data.network.UpdateGroupRequest
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class Settlement(
-    val memberName: String,
-    val amount: Double,
-    val owesYou: Boolean
-)
+data class Settlement(val memberName: String, val amount: Double, val owesYou: Boolean)
+data class GroupMember(val userId: String, val name: String, val role: String)
 
-data class GroupMember(
-    val userId: String = "",
-    val name: String,
-    val role: String = "member",
-    val isOnApp: Boolean = true
-)
-
-// Contact from device directory, enriched with SplitPay status
-data class ContactWithStatus(
+// Reuse AppContact/DeviceContact from CreateGroupViewModel
+data class AddableContact(
+    val userId: String,
     val name: String,
     val phone: String,
-    val userId: String?,       // null = not on SplitPay
-    val isAdded: Boolean = false
-) {
-    val isOnApp get() = userId != null
-}
+    val email: String = "",
+    val isSelected: Boolean = false
+)
+data class InvitableContact(val name: String, val phone: String)
 
-class GroupDetailViewModel(
-    application: Application,
-    savedStateHandle: SavedStateHandle
-) : AndroidViewModel(application) {
+class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
 
-    // groupId available immediately from nav args — used to pre-load cache in init
-    private val cachedGroupId: String = savedStateHandle.get<String>("groupId") ?: ""
+    private val tokenManager = (app as SplitPayApp).tokenManager
+    private val api = RetrofitClient.api
 
-    private val tokenManager = TokenManager(application)
-    private val api          = RetrofitClient.build(tokenManager)
-
-    // StateFlows initialized from cache so the very first frame has data — no spinner
-    private val _isLoading = MutableStateFlow(AppCache.groupDetails[cachedGroupId] == null)
-    val isLoading: StateFlow<Boolean> = _isLoading
-
-    private val _group = MutableStateFlow<Group?>(AppCache.groupDetails[cachedGroupId])
+    private val _group = MutableStateFlow<Group?>(null)
     val group: StateFlow<Group?> = _group
 
-    private val _expenses = MutableStateFlow<List<Expense>>(AppCache.expensesByGroup[cachedGroupId] ?: emptyList())
+    private val _members = MutableStateFlow<List<GroupMember>>(emptyList())
+    val members: StateFlow<List<GroupMember>> = _members
+
+    private val _expenses = MutableStateFlow<List<Expense>>(emptyList())
     val expenses: StateFlow<List<Expense>> = _expenses
 
     private val _settlements = MutableStateFlow<List<Settlement>>(emptyList())
@@ -72,417 +53,258 @@ class GroupDetailViewModel(
     private val _yourBalance = MutableStateFlow(0.0)
     val yourBalance: StateFlow<Double> = _yourBalance
 
-    private val _totalSpending = MutableStateFlow(
-        AppCache.expensesByGroup[cachedGroupId]?.sumOf { it.amount } ?: 0.0
-    )
+    private val _totalSpending = MutableStateFlow(0.0)
     val totalSpending: StateFlow<Double> = _totalSpending
 
-    private val _groupMembers = MutableStateFlow<List<GroupMember>>(
-        AppCache.groupMembers[cachedGroupId] ?: emptyList()
-    )
-    val groupMembers: StateFlow<List<GroupMember>> = _groupMembers
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading
 
-    // ── Contacts / Add Member ─────────────────────────────────────────────
-    private val _contacts = MutableStateFlow<List<ContactWithStatus>>(
-        AppCache.contactsWithStatus ?: emptyList()  // serve cache immediately on VM creation
-    )
-    val contacts: StateFlow<List<ContactWithStatus>> = _contacts
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
+    private val _isAdmin = MutableStateFlow(false)
+    val isAdmin: StateFlow<Boolean> = _isAdmin
+
+    private val _groupDeleted = MutableStateFlow(false)
+    val groupDeleted: StateFlow<Boolean> = _groupDeleted
+
+    // ── Add member contact lists ───────────────────────────────────────────────
+    private val _addableContacts = MutableStateFlow<List<AddableContact>>(emptyList())
+    val addableContacts: StateFlow<List<AddableContact>> = _addableContacts
+
+    private val _invitableContacts = MutableStateFlow<List<InvitableContact>>(emptyList())
+    val invitableContacts: StateFlow<List<InvitableContact>> = _invitableContacts
 
     private val _isLoadingContacts = MutableStateFlow(false)
     val isLoadingContacts: StateFlow<Boolean> = _isLoadingContacts
 
-    private val _contactsError = MutableStateFlow<String?>(null)
-    val contactsError: StateFlow<String?> = _contactsError
-
-    private val _addMemberError = MutableStateFlow<String?>(null)
-    val addMemberError: StateFlow<String?> = _addMemberError
-
-    private val _groupError = MutableStateFlow<String?>(null)
-    val groupError: StateFlow<String?> = _groupError
-
-    // ─────────────────────────────────────────────────────────────────────
-
-    private var pollingJob: Job? = null
-
-    fun startPolling(groupId: String) {
-        if (pollingJob?.isActive == true) return
-        pollingJob = viewModelScope.launch {
-            while (true) {
-                delay(15_000)
-                fetchGroup(groupId)
-            }
-        }
-    }
-
-    fun stopPolling() {
-        pollingJob?.cancel()
-        pollingJob = null
-    }
+    val emojis = listOf(
+        "🏠", "✈️", "🍕", "🏕️", "🎉", "🛒",
+        "🏋️", "🎮", "🎵", "🚗", "⚽", "📚",
+        "💼", "🌴", "🍻", "🎓", "💊", "🐾"
+    )
 
     fun loadGroup(groupId: String) {
         viewModelScope.launch {
-            // Serve cached data instantly — no spinner if we already have it
-            AppCache.groupDetails[groupId]?.let { _group.value = it }
-            AppCache.groupMembers[groupId]?.let { _groupMembers.value = it }
-            _isLoading.value = _group.value == null
-            fetchGroup(groupId)
-            loadExpenses(groupId)
+            _isLoading.value = true
+            _error.value = null
+
+            val userId = tokenManager.userId
+
+            val groupDef       = async { runCatching { api.getGroup(groupId) } }
+            val membersDef     = async { runCatching { api.getMembers(groupId) } }
+            val expensesDef    = async { runCatching { api.getExpenses(groupId) } }
+            val balancesDef    = async { runCatching { api.getBalances(groupId) } }
+            val settlementsDef = async { runCatching { api.getSettlements(groupId) } }
+
+            groupDef.await().onSuccess { r ->
+                r.body()?.let { g ->
+                    _group.value = Group(
+                        id           = g.id,
+                        name         = g.name,
+                        emoji        = g.emoji,
+                        members      = emptyList(),
+                        balance      = g.userBalance,
+                        lastActivity = g.lastActivityAt,
+                        isArchived   = g.isArchived,
+                        inviteToken  = g.inviteToken
+                    )
+                }
+            }
+
+            membersDef.await().onSuccess { r ->
+                r.body()?.let { list ->
+                    _group.value = _group.value?.copy(members = list.map { it.name })
+                    _members.value = list.map { GroupMember(it.userId, it.name, it.role) }
+                    _isAdmin.value = list.find { it.userId == userId }?.role == "admin"
+                }
+            }
+
+            expensesDef.await().onSuccess { r ->
+                r.body()?.let { list ->
+                    val expenses = list.map { e ->
+                        val myShare = e.participants
+                            .find { it.userId == userId }
+                            ?.let { p -> if (e.paidBy == userId) e.amount - p.share else -p.share }
+                            ?: 0.0
+                        Expense(
+                            id           = e.id,
+                            title        = e.title,
+                            amount       = e.amount,
+                            paidBy       = e.paidByName,
+                            paidById     = e.paidBy,
+                            date         = e.createdAt.take(10),
+                            yourShare    = myShare,
+                            category     = e.category ?: "other",
+                            splitMode    = e.splitMode ?: "equally",
+                            participants = e.participants.map { it.userId }
+                        )
+                    }
+                    _expenses.value = expenses
+                    _totalSpending.value = expenses.sumOf { it.amount }
+                }
+            }
+
+            balancesDef.await().onSuccess { r ->
+                r.body()?.let { list ->
+                    _yourBalance.value = list.find { it.userId == userId }?.amount ?: 0.0
+                }
+            }
+
+            settlementsDef.await().onSuccess { r ->
+                r.body()?.let { list ->
+                    _settlements.value = list.map { s ->
+                        Settlement(
+                            memberName = if (s.fromUserId == userId) s.toName else s.fromName,
+                            amount     = s.amount,
+                            owesYou    = s.toUserId == userId
+                        )
+                    }
+                }
+            }
+
             _isLoading.value = false
         }
     }
 
-    fun loadExpenses(groupId: String) {
-        viewModelScope.launch {
-            // Serve cache immediately
-            AppCache.expensesByGroup[groupId]?.let { _expenses.value = it }
-            try {
-                val response = api.getExpenses(groupId)
-                if (response.isSuccessful) {
-                    val currentUserId = tokenManager.getUserId() ?: ""
-                    val fresh = response.body()?.map { e ->
-                        val myShare = e.participants.find { it.userId == currentUserId }?.share ?: 0.0
-                        val yourShare = if (e.paidByUserId == currentUserId) {
-                            // You paid — others owe you
-                            e.amount - myShare
-                        } else {
-                            // Someone else paid — you owe your share
-                            -myShare
-                        }
-                        ExpenseModel(
-                            id        = e.id,
-                            title     = e.title,
-                            amount    = e.amount,
-                            paidBy    = e.paidByName,
-                            date      = e.createdAt,
-                            yourShare = yourShare
-                        )
-                    } ?: emptyList()
-                    AppCache.expensesByGroup[groupId] = fresh
-                    _expenses.value = fresh
-                    _totalSpending.value = fresh.sumOf { it.amount }
-                }
-            } catch (_: Exception) { }
-        }
-    }
-
-    // Called both by loadGroup() and the polling loop
-    private suspend fun fetchGroup(groupId: String) {
-        try {
-            val groupResp = api.getGroup(groupId)
-            if (groupResp.isSuccessful) {
-                val g = groupResp.body()!!
-                val fresh = Group(
-                    id           = g.id,
-                    name         = g.name,
-                    members      = emptyList(),
-                    memberCount  = g.memberCount,
-                    balance      = 0.0,
-                    lastActivity = "",
-                    emoji        = g.description?.takeIf { it.isNotBlank() } ?: "💰",
-                    isArchived   = g.isArchived
-                )
-                AppCache.groupDetails[groupId] = fresh
-                _group.value = fresh
-            }
-            val membersResp = api.getGroupMembers(groupId)
-            if (membersResp.isSuccessful) {
-                val freshMembers = membersResp.body()?.map { m ->
-                    GroupMember(userId = m.userId, name = m.name, role = m.role, isOnApp = true)
-                } ?: emptyList()
-                AppCache.groupMembers[groupId] = freshMembers
-                _groupMembers.value = freshMembers
-            }
-        } catch (_: Exception) {
-            // Keep showing cached data on network error
-        }
-    }
-
-    /**
-     * 1. Read device contacts (IO thread)
-     * 2. POST /users/lookup with all phone numbers
-     * 3. Merge results → ContactWithStatus list
-     */
-    fun loadContacts() {
+    // ── Load contacts for add member sheet ────────────────────────────────────
+    fun loadContactsForAdding(contentResolver: ContentResolver) {
         viewModelScope.launch {
             _isLoadingContacts.value = true
-            _contactsError.value = null
-            try {
-                val deviceContacts = withContext(Dispatchers.IO) {
-                    ContactReader.read(getApplication())
-                }
-                if (deviceContacts.isEmpty()) {
-                    _contacts.value = emptyList()
-                    return@launch
+
+            val deviceContacts = withContext(Dispatchers.IO) { readDeviceContacts(contentResolver) }
+            if (deviceContacts.isEmpty()) { _isLoadingContacts.value = false; return@launch }
+
+            val currentUserId = tokenManager.userId
+            val currentMemberIds = _members.value.map { it.userId }.toSet()
+
+            runCatching { api.lookupByPhones(LookupRequest(deviceContacts.map { it.phone })) }
+                .onSuccess { r ->
+                    if (r.isSuccessful) {
+                        val appUsers = r.body().orEmpty()
+                        val appPhones = appUsers.map { it.phone }.toSet()
+
+                        // On SplitPay but not already in the group and not current user
+                        _addableContacts.value = appUsers
+                            .filter { it.userId != currentUserId && it.userId !in currentMemberIds }
+                            .map { AddableContact(it.userId, it.name, it.phone, it.email ?: "") }
+
+                        // Not on SplitPay
+                        _invitableContacts.value = deviceContacts
+                            .filter { it.phone !in appPhones }
+                            .distinctBy { it.phone }
+                            .map { InvitableContact(it.name, it.phone) }
+                    }
                 }
 
-                val phones  = deviceContacts.map { it.phone }
-                val response = api.lookupUsers(PhoneLookupRequest(phones))
-
-                val lookupMap: Map<String, Pair<String, String>> = if (response.isSuccessful) {
-                    response.body()?.associate { it.phone to (it.userId to it.name) } ?: emptyMap()
-                } else emptyMap()
-
-                val fresh = deviceContacts.map { contact ->
-                    val match = lookupMap[contact.phone]
-                    ContactWithStatus(
-                        name   = contact.name,
-                        phone  = contact.phone,
-                        userId = match?.first
-                    )
-                }
-                // Preserve already-added state during refresh
-                val alreadyAdded = _contacts.value.filter { it.isAdded }.map { it.userId }.toSet()
-                _contacts.value = fresh.map { if (it.userId in alreadyAdded) it.copy(isAdded = true) else it }
-                AppCache.contactsWithStatus = fresh
-            } catch (e: Exception) {
-                _contactsError.value = "Cannot reach server. Check your connection."
-            } finally {
-                _isLoadingContacts.value = false
-            }
+            _isLoadingContacts.value = false
         }
     }
 
-    fun clearErrors() {
-        _contactsError.value = null
-        _addMemberError.value = null
-        _groupError.value = null
+    private fun readDeviceContacts(cr: ContentResolver): List<InvitableContact> {
+        val result = mutableListOf<InvitableContact>()
+        val cursor = cr.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            ),
+            null, null,
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
+        ) ?: return result
+        cursor.use {
+            val nameCol  = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+            val phoneCol = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            while (it.moveToNext()) {
+                val name  = it.getString(nameCol) ?: continue
+                val phone = it.getString(phoneCol)?.replace("\\s|-".toRegex(), "") ?: continue
+                result.add(InvitableContact(name, phone))
+            }
+        }
+        return result.distinctBy { it.phone }
     }
 
-    fun updateGroup(groupId: String, name: String, emoji: String, onSuccess: () -> Unit) {
+    fun addMemberById(groupId: String, userId: String, userName: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
-            // Optimistic update — apply immediately, revert on failure
-            val previous = _group.value
-            val optimistic = previous?.copy(name = name, emoji = emoji)
-            if (optimistic != null) {
-                _group.value = optimistic
-                AppCache.groupDetails[groupId] = optimistic
-                AppCache.groups = AppCache.groups?.map { if (it.id == groupId) optimistic else it }
-            }
-            try {
-                val response = api.updateGroup(groupId, UpdateGroupRequest(name = name, description = emoji))
-                if (response.isSuccessful) {
-                    val fresh = response.body()!!
-                    val confirmed = _group.value?.copy(
-                        name  = fresh.name,
-                        emoji = fresh.description?.takeIf { it.isNotBlank() } ?: "💰"
-                    )
-                    if (confirmed != null) {
-                        _group.value = confirmed
-                        AppCache.groupDetails[groupId] = confirmed
-                        AppCache.groups = AppCache.groups?.map { if (it.id == groupId) confirmed else it }
-                    }
+            runCatching {
+                api.addMember(groupId, AddMemberRequest(userId))
+            }.onSuccess { r ->
+                if (r.isSuccessful) {
+                    _members.value = _members.value + GroupMember(userId, userName, "member")
+                    _group.value = _group.value?.copy(members = _members.value.map { it.name })
+                    // Remove from addable list
+                    _addableContacts.value = _addableContacts.value.filter { it.userId != userId }
                     onSuccess()
                 } else {
-                    // Revert on error
-                    _group.value = previous
-                    if (previous != null) {
-                        AppCache.groupDetails[groupId] = previous
-                        AppCache.groups = AppCache.groups?.map { if (it.id == groupId) previous else it }
-                    }
-                    _groupError.value = "Failed to update group (${response.code()})"
+                    onError("Failed to add member (${r.code()})")
                 }
-            } catch (_: Exception) {
-                // Revert on network error
-                _group.value = previous
-                if (previous != null) {
-                    AppCache.groupDetails[groupId] = previous
-                    AppCache.groups = AppCache.groups?.map { if (it.id == groupId) previous else it }
-                }
-                _groupError.value = "Cannot reach server."
-            }
+            }.onFailure { onError("Cannot reach server") }
         }
     }
 
-    fun deleteGroup(groupId: String, onSuccess: () -> Unit) {
-        // Optimistic: remove from cache immediately and navigate back
-        AppCache.invalidateGroup(groupId)
-        AppCache.groups = AppCache.groups?.filter { it.id != groupId }
-        onSuccess()
+    fun updateGroup(groupId: String, newName: String, newEmoji: String, onSuccess: () -> Unit) {
+        if (newName.isBlank()) return
         viewModelScope.launch {
-            try {
-                val response = api.deleteGroup(groupId)
-                if (!response.isSuccessful) {
-                    _groupError.value = "Failed to delete group (${response.code()})"
+            runCatching {
+                api.updateGroup(groupId, UpdateGroupRequest(newName.trim(), newEmoji))
+            }.onSuccess { r ->
+                if (r.isSuccessful) {
+                    _group.value = _group.value?.copy(name = newName.trim(), emoji = newEmoji)
+                    AppCache.groups = null
+                    onSuccess()
+                } else {
+                    _error.value = "Failed to update group"
                 }
-            } catch (_: Exception) {
-                // Already navigated away — silently ignore
-            }
-        }
-    }
-
-    fun unarchiveGroup(groupId: String, onSuccess: () -> Unit) {
-        // Optimistic: move back to active list
-        val updated = _group.value?.copy(isArchived = false)
-        if (updated != null) {
-            _group.value = updated
-            AppCache.groupDetails[groupId] = updated
-            AppCache.archivedGroups = AppCache.archivedGroups?.filter { it.id != groupId }
-            AppCache.groups = listOf(updated) + (AppCache.groups ?: emptyList())
-        }
-        onSuccess()
-        viewModelScope.launch {
-            try {
-                api.unarchiveGroup(groupId)
-            } catch (_: Exception) { }
-        }
-    }
-
-    fun archiveGroup(groupId: String, onSuccess: () -> Unit) {
-        // Optimistic: remove from cache immediately and navigate back
-        AppCache.invalidateGroup(groupId)
-        AppCache.groups = AppCache.groups?.filter { it.id != groupId }
-        onSuccess()
-        viewModelScope.launch {
-            try {
-                val response = api.archiveGroup(groupId)
-                if (!response.isSuccessful) {
-                    _groupError.value = "Failed to archive group (${response.code()})"
-                }
-            } catch (_: Exception) {
-                // Already navigated away — silently ignore
-            }
+            }.onFailure { _error.value = "Cannot reach server" }
         }
     }
 
     fun removeMember(groupId: String, userId: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
-            // Optimistic update — remove immediately, restore on failure
-            val previousMembers = _groupMembers.value
-            _groupMembers.value = previousMembers.filter { it.userId != userId }
-            AppCache.groupMembers[groupId] = _groupMembers.value
-            try {
-                val response = api.removeMember(groupId, userId)
-                if (response.isSuccessful) {
+            runCatching {
+                api.removeMember(groupId, userId)
+            }.onSuccess { r ->
+                if (r.isSuccessful) {
+                    _members.value = _members.value.filter { it.userId != userId }
+                    _group.value = _group.value?.copy(members = _members.value.map { it.name })
                     onSuccess()
                 } else {
-                    // Revert
-                    _groupMembers.value = previousMembers
-                    AppCache.groupMembers[groupId] = previousMembers
-                    _groupError.value = when (response.code()) {
-                        403 -> "Only admins can remove members"
-                        else -> "Failed to remove member (${response.code()})"
-                    }
+                    _error.value = "Failed to remove member"
                 }
-            } catch (_: Exception) {
-                // Revert
-                _groupMembers.value = previousMembers
-                AppCache.groupMembers[groupId] = previousMembers
-                _groupError.value = "Cannot reach server."
-            }
+            }.onFailure { _error.value = "Cannot reach server" }
         }
     }
 
-    fun addMembers(groupId: String, userIds: List<String>, onSuccess: () -> Unit) {
-        if (userIds.isEmpty()) return
-        _addMemberError.value = null
-
-        // Optimistic: add placeholders to members list immediately
-        val optimisticNew = userIds.mapNotNull { uid ->
-            _contacts.value.find { it.userId == uid }
-                ?.let { GroupMember(userId = uid, name = it.name, role = "member", isOnApp = true) }
-        }
-        val previous = _groupMembers.value
-        _groupMembers.value = previous + optimisticNew
-        AppCache.groupMembers[groupId] = _groupMembers.value
-
-        onSuccess()
-
+    fun deleteGroup(groupId: String) {
         viewModelScope.launch {
-            userIds.forEach { uid ->
-                try {
-                    val response = api.addMemberToGroup(groupId, AddMemberRequest(uid))
-                    if (!response.isSuccessful && response.code() != 409) {
-                        _addMemberError.value = when (response.code()) {
-                            403  -> "Only admins can add members"
-                            else -> "Failed to add member (${response.code()})"
-                        }
-                    }
-                } catch (_: Exception) {
-                    _addMemberError.value = "Cannot reach server."
+            runCatching {
+                api.archiveGroup(groupId)
+            }.onSuccess { r ->
+                if (r.isSuccessful) {
+                    AppCache.invalidateGroup(groupId)
+                    _groupDeleted.value = true
+                } else {
+                    _error.value = "Failed to delete group"
                 }
-            }
-            // Refresh members from server to get accurate state
-            try {
-                val membersResp = api.getGroupMembers(groupId)
-                if (membersResp.isSuccessful) {
-                    val fresh = membersResp.body()?.map { m ->
-                        GroupMember(userId = m.userId, name = m.name, role = m.role, isOnApp = true)
-                    } ?: _groupMembers.value
-                    AppCache.groupMembers[groupId] = fresh
-                    _groupMembers.value = fresh
-                }
-            } catch (_: Exception) { }
+            }.onFailure { _error.value = "Cannot reach server" }
         }
     }
 
-    // ── Mock data (until expenses API is ready) ───────────────────────────
-
-    // Legacy mock data — kept for reference only, not called
-    @Suppress("unused")
-    private fun loadBerlinTrip() {
-        _group.value = Group(
-            id = "1", name = "Trip to Berlin",
-            members = listOf("You", "Marc", "Elena", "Alex", "Sarah"),
-            balance = 142.50, lastActivity = "Active now", emoji = "✈️"
-        )
-        _expenses.value = listOf(
-            Expense(id = "1", title = "Hotel Adlon Kempinski", amount = 840.0,  paidBy = "You",   date = "Oct 12", yourShare = 672.0),
-            Expense(id = "2", title = "Dinner at Borchardt",   amount = 312.50, paidBy = "Marc",  date = "Oct 13", yourShare = -62.50),
-            Expense(id = "3", title = "DB Train Tickets",       amount = 125.0,  paidBy = "You",   date = "Oct 14", yourShare = 100.0),
-            Expense(id = "4", title = "Museum Island Entry",    amount = 90.0,   paidBy = "Elena", date = "Oct 15", yourShare = -18.0)
-        )
-        _settlements.value = listOf(
-            Settlement("Marc", 245.0, owesYou = true),
-            Settlement("Elena", 12.50, owesYou = true)
-        )
-        _yourBalance.value   = 142.50
-        _totalSpending.value = 2480.0
-        _groupMembers.value  = listOf(
-            GroupMember(name = "You",   isOnApp = true),
-            GroupMember(name = "Marc",  isOnApp = true),
-            GroupMember(name = "Elena", isOnApp = true),
-            GroupMember(name = "Alex",  isOnApp = false),
-            GroupMember(name = "Sarah", isOnApp = false),
-        )
+    fun deleteExpense(groupId: String, expenseId: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { api.deleteExpense(groupId, expenseId) }
+                .onSuccess { r ->
+                    if (r.isSuccessful) {
+                        _expenses.value = _expenses.value.filter { it.id != expenseId }
+                        _totalSpending.value = _expenses.value.sumOf { it.amount }
+                        AppCache.expensesByGroup.remove(groupId)
+                        onSuccess()
+                    } else {
+                        _error.value = "Failed to delete expense"
+                    }
+                }.onFailure { _error.value = "Cannot reach server" }
+        }
     }
 
-    private fun loadApartment() {
-        _group.value = Group(
-            id = "2", name = "Apartment Expenses",
-            members = listOf("You", "Roommate"),
-            balance = -300.0, lastActivity = "2 days ago", emoji = "🏠"
-        )
-        _expenses.value = listOf(
-            Expense(id = "5", title = "Monthly Rent", amount = 600.0, paidBy = "Roommate", date = "Mar 1", yourShare = -300.0)
-        )
-        _settlements.value  = emptyList()
-        _yourBalance.value  = -300.0
-        _totalSpending.value = 600.0
-        _groupMembers.value = listOf(
-            GroupMember(name = "You",      isOnApp = true),
-            GroupMember(name = "Roommate", isOnApp = true),
-        )
-    }
-
-    private fun loadHike() {
-        _group.value = Group(
-            id = "3", name = "Weekend Hike",
-            members = listOf("You", "Alex", "Sarah", "Tom", "Emma", "Jake"),
-            balance = 0.0, lastActivity = "Last week", emoji = "🏕️"
-        )
-        _expenses.value = listOf(
-            Expense(id = "6", title = "Camping Gear Rental", amount = 120.0, paidBy = "Alex", date = "Mar 20", yourShare = 0.0)
-        )
-        _settlements.value  = emptyList()
-        _yourBalance.value  = 0.0
-        _totalSpending.value = 120.0
-        _groupMembers.value = listOf(
-            GroupMember(name = "You",  isOnApp = true),
-            GroupMember(name = "Alex", isOnApp = true),
-            GroupMember(name = "Sarah",isOnApp = false),
-            GroupMember(name = "Tom",  isOnApp = true),
-            GroupMember(name = "Emma", isOnApp = false),
-            GroupMember(name = "Jake", isOnApp = true),
-        )
-    }
+    fun refresh(groupId: String) = loadGroup(groupId)
 }

@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
@@ -26,9 +25,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.data.model.Group
 import com.splitpay.viewmodel.HomeViewModel
@@ -51,27 +50,23 @@ fun HomeScreen(
     onNavigateToGroup: (String) -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToGroups: () -> Unit,
-    onNavigateToArchivedGroups: () -> Unit,
     onNavigateToCreateGroup: () -> Unit,
     onNavigateToSettlement: (String) -> Unit,
     homeViewModel: HomeViewModel = viewModel()
 ) {
-    val groups by homeViewModel.groups.collectAsStateWithLifecycle()
-    val archivedGroups by homeViewModel.archivedGroups.collectAsStateWithLifecycle()
-    val totalOwed by homeViewModel.totalOwed.collectAsStateWithLifecycle()
-    val totalOwe by homeViewModel.totalOwe.collectAsStateWithLifecycle()
-    var selectedTab by remember { mutableIntStateOf(0) }
-
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            homeViewModel.loadGroups()
-            homeViewModel.startPolling()
-        }
-    }
     DisposableEffect(lifecycleOwner) {
-        onDispose { homeViewModel.stopPolling() }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) homeViewModel.fetchGroups()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    val groups by homeViewModel.groups.collectAsStateWithLifecycle()
+    val totalOwed = groups.filter { it.balance > 0 }.sumOf { it.balance }
+    val totalOwe = groups.filter { it.balance < 0 }.sumOf { -it.balance }
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
 
@@ -128,57 +123,6 @@ fun HomeScreen(
 
             // ── Groups header ─────────────────────────────────────────────
             item {
-                // Archived card first (if any)
-                if (archivedGroups.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(SurfaceContainerLowest)
-                            .clickable { onNavigateToArchivedGroups() }
-                            .padding(horizontal = 16.dp, vertical = 14.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(OnSurfaceVariant.copy(alpha = 0.08f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Archive,
-                                        contentDescription = null,
-                                        tint = OnSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                                Column {
-                                    Text("Archived", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
-                                    Text(
-                                        text = "${archivedGroups.size} group${if (archivedGroups.size > 1) "s" else ""}",
-                                        fontSize = 12.sp,
-                                        color = OnSurfaceVariant
-                                    )
-                                }
-                            }
-                            Text(
-                                text = archivedGroups.take(3).joinToString("  ") { it.emoji },
-                                fontSize = 18.sp
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -202,7 +146,7 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // ── Group items (max 5) ───────────────────────────────────────
+            // ── Group items ───────────────────────────────────────────────
             items(groups.take(5)) { group ->
                 GroupItem(
                     group = group,
@@ -250,7 +194,7 @@ fun HomeScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = homeViewModel.userInitial,
+                        text = "A",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
@@ -344,6 +288,23 @@ fun BalanceCard(
     }
 }
 
+private fun formatActivity(iso: String): String {
+    if (iso.isBlank()) return "RECENTLY"
+    return try {
+        val zdt = java.time.OffsetDateTime.parse(iso)
+        val now = java.time.OffsetDateTime.now()
+        val days = java.time.temporal.ChronoUnit.DAYS.between(zdt.toLocalDate(), now.toLocalDate())
+        when {
+            days == 0L  -> "TODAY"
+            days == 1L  -> "YESTERDAY"
+            days < 7L   -> "$days DAYS AGO"
+            days < 30L  -> "${days / 7}W AGO"
+            days < 365L -> "${days / 30}MO AGO"
+            else        -> "${days / 365}Y AGO"
+        }
+    } catch (_: Exception) { "RECENTLY" }
+}
+
 // ── Group Item ────────────────────────────────────────────────────────────────
 @Composable
 fun GroupItem(
@@ -401,13 +362,21 @@ fun GroupItem(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "${group.memberCount} member${if (group.memberCount != 1) "s" else ""}",
+                        text = "${group.members.size} members",
                         fontSize = 12.sp,
                         color = OnSurfaceVariant
                     )
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = formatActivity(group.lastActivity),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = OutlineVariant,
+                    letterSpacing = 0.5.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = balanceLabel,
                     fontSize = 10.sp,

@@ -3,59 +3,52 @@ package com.splitpay.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.splitpay.data.AppCache
-import com.splitpay.network.RetrofitClient
-import com.splitpay.network.TokenManager
-import com.splitpay.network.UpdateProfileRequest
+import com.splitpay.SplitPayApp
+import com.splitpay.data.local.AppCache
+import com.splitpay.data.network.RefreshRequest
+import com.splitpay.data.network.RetrofitClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-class ProfileViewModel(application: Application) : AndroidViewModel(application) {
+class ProfileViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val tokenManager = TokenManager(application)
-    private val api          = RetrofitClient.build(tokenManager)
+    private val tokenManager = (app as SplitPayApp).tokenManager
+    private val api = RetrofitClient.api
 
-    private val _userName  = MutableStateFlow(tokenManager.getUserName() ?: "")
+    private val _userName     = MutableStateFlow(tokenManager.userName ?: "")
     val userName: StateFlow<String> = _userName
 
-    private val _userEmail = MutableStateFlow(tokenManager.getUserEmail() ?: "")
+    private val _userEmail    = MutableStateFlow(tokenManager.userEmail ?: "")
     val userEmail: StateFlow<String> = _userEmail
-
-    private val _userPhone = MutableStateFlow(tokenManager.getUserPhone() ?: "")
-    val userPhone: StateFlow<String> = _userPhone
 
     private val _totalBalance = MutableStateFlow(0.0)
     val totalBalance: StateFlow<Double> = _totalBalance
 
-    private val _groupCount = MutableStateFlow(0)
+    private val _groupCount   = MutableStateFlow(AppCache.groups?.size ?: 0)
     val groupCount: StateFlow<Int> = _groupCount
 
-    private val _darkMode = MutableStateFlow(false)
+    private val _darkMode     = MutableStateFlow(false)
     val darkMode: StateFlow<Boolean> = _darkMode
 
     init { loadProfile() }
 
     private fun loadProfile() {
         viewModelScope.launch {
-            try {
-                val resp = api.getProfile()
-                if (resp.isSuccessful) {
-                    resp.body()?.let { user ->
-                        _userName.value  = user.name
-                        _userEmail.value = user.email
-                        _userPhone.value = user.phone ?: ""
-                        tokenManager.saveUserName(user.name)
-                        tokenManager.saveUserEmail(user.email)
-                        tokenManager.saveUserPhone(user.phone)
-                    }
+            runCatching { api.getProfile() }.onSuccess { r ->
+                if (r.isSuccessful) {
+                    val body = r.body()!!
+                    _userName.value  = body.name
+                    _userEmail.value = body.email
+                    tokenManager.userName  = body.name
+                    tokenManager.userEmail = body.email
                 }
-                val groupsResp = api.getGroups()
-                if (groupsResp.isSuccessful) {
-                    _groupCount.value = groupsResp.body()?.size ?: 0
-                }
-            } catch (_: Exception) {
-                // Fallback to cached values already loaded in init
+            }
+            // compute total balance across all groups
+            val groups = AppCache.groups
+            if (groups != null) {
+                _totalBalance.value = groups.sumOf { it.balance }
+                _groupCount.value   = groups.size
             }
         }
     }
@@ -64,9 +57,12 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
 
     fun logout(onLogout: () -> Unit) {
         viewModelScope.launch {
-            try { api.logout() } catch (_: Exception) {}
+            val refresh = tokenManager.refreshToken
+            if (refresh != null) {
+                runCatching { api.logout(RefreshRequest(refresh)) }
+            }
             tokenManager.clear()
-            AppCache.onLogout()
+            AppCache.clearAll()
             onLogout()
         }
     }

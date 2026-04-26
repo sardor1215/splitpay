@@ -2,7 +2,9 @@ package com.splitpay.repository
 
 import com.splitpay.database.loggedTransaction
 import com.splitpay.database.tables.ExpenseGroups
+import com.splitpay.database.tables.Expenses
 import com.splitpay.database.tables.GroupMembers
+import com.splitpay.database.tables.Users
 import org.jetbrains.exposed.sql.*
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -11,6 +13,7 @@ import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 data class Group(
     val id: UUID,
     val name: String,
+    val emoji: String,
     val description: String?,
     val createdBy: UUID,
     val createdAt: OffsetDateTime,
@@ -24,6 +27,7 @@ data class GroupMember(
     val id: UUID,
     val groupId: UUID,
     val userId: UUID,
+    val name: String,
     val role: String,
     val joinedAt: OffsetDateTime
 )
@@ -31,15 +35,15 @@ data class GroupMember(
 object GroupRepository {
 
     // ── Create ─────────────────────────────────────────────────────────
-    fun create(name: String, description: String?, createdBy: UUID): Group = loggedTransaction {
+    fun create(name: String, emoji: String, description: String?, createdBy: UUID): Group = loggedTransaction {
         val token = UUID.randomUUID().toString()
-        val now = OffsetDateTime.now()
         val id = ExpenseGroups.insert {
             it[ExpenseGroups.name]        = name
+            it[ExpenseGroups.emoji]       = emoji
             it[ExpenseGroups.description] = description
             it[ExpenseGroups.createdBy]   = createdBy
             it[ExpenseGroups.inviteToken] = token
-            it[ExpenseGroups.createdAt]   = now
+            it[ExpenseGroups.createdAt]   = OffsetDateTime.now()
         }[ExpenseGroups.id]
 
         // Creator becomes admin
@@ -47,10 +51,19 @@ object GroupRepository {
             it[GroupMembers.groupId]  = id
             it[GroupMembers.userId]   = createdBy
             it[GroupMembers.role]     = "admin"
-            it[GroupMembers.joinedAt] = now
+            it[GroupMembers.joinedAt] = OffsetDateTime.now()
         }
 
         findById(id)!!
+    }
+
+    // ── Update ─────────────────────────────────────────────────────────
+    fun update(groupId: UUID, name: String, emoji: String?, description: String?): Boolean = loggedTransaction {
+        ExpenseGroups.update({ ExpenseGroups.id eq groupId }) {
+            it[ExpenseGroups.name] = name
+            if (emoji != null) it[ExpenseGroups.emoji] = emoji
+            if (description != null) it[ExpenseGroups.description] = description
+        } > 0
     }
 
     // ── Finders ────────────────────────────────────────────────────────
@@ -67,20 +80,13 @@ object GroupRepository {
     fun findByUser(userId: UUID): List<Group> = loggedTransaction {
         (ExpenseGroups innerJoin GroupMembers)
             .select { (GroupMembers.userId eq userId) and (ExpenseGroups.isArchived eq false) }
-            .orderBy(ExpenseGroups.createdAt, SortOrder.DESC)
-            .map { it.toGroup() }
-    }
-
-    fun findArchivedByUser(userId: UUID): List<Group> = loggedTransaction {
-        (ExpenseGroups innerJoin GroupMembers)
-            .select { (GroupMembers.userId eq userId) and (ExpenseGroups.isArchived eq true) }
-            .orderBy(ExpenseGroups.createdAt, SortOrder.DESC)
             .map { it.toGroup() }
     }
 
     // ── Members ────────────────────────────────────────────────────────
     fun getMembers(groupId: UUID): List<GroupMember> = loggedTransaction {
-        GroupMembers.select { GroupMembers.groupId eq groupId }
+        (GroupMembers innerJoin Users)
+            .select { GroupMembers.groupId eq groupId }
             .map { it.toMember() }
     }
 
@@ -88,8 +94,25 @@ object GroupRepository {
         GroupMembers.select { GroupMembers.groupId eq groupId }.count().toInt()
     }
 
+    fun getMemberCounts(groupIds: List<UUID>): Map<UUID, Int> = loggedTransaction {
+        GroupMembers
+            .slice(GroupMembers.groupId, GroupMembers.groupId.count())
+            .select { GroupMembers.groupId inList groupIds }
+            .groupBy(GroupMembers.groupId)
+            .associate { it[GroupMembers.groupId] to it[GroupMembers.groupId.count()].toInt() }
+    }
+
+    fun getLastActivities(groupIds: List<UUID>): Map<UUID, OffsetDateTime> = loggedTransaction {
+        val maxCreatedAt = Expenses.createdAt.max()
+        Expenses
+            .slice(Expenses.groupId, maxCreatedAt)
+            .select { Expenses.groupId inList groupIds }
+            .groupBy(Expenses.groupId)
+            .associate { it[Expenses.groupId] to it[maxCreatedAt]!! }
+    }
+
     fun getMember(groupId: UUID, userId: UUID): GroupMember? = loggedTransaction {
-        GroupMembers.select {
+        (GroupMembers innerJoin Users).select {
             (GroupMembers.groupId eq groupId) and (GroupMembers.userId eq userId)
         }.singleOrNull()?.toMember()
     }
@@ -101,15 +124,13 @@ object GroupRepository {
         getMember(groupId, userId)?.role == "admin"
 
     // ── Add member directly ────────────────────────────────────────────
-    fun addMember(groupId: UUID, userId: UUID): Boolean = loggedTransaction {
-        if (isMember(groupId, userId)) return@loggedTransaction false
+    fun addMember(groupId: UUID, userId: UUID) = loggedTransaction {
         GroupMembers.insert {
             it[GroupMembers.groupId]  = groupId
             it[GroupMembers.userId]   = userId
             it[GroupMembers.role]     = "member"
             it[GroupMembers.joinedAt] = OffsetDateTime.now()
         }
-        true
     }
 
     // ── Join via invite link ────────────────────────────────────────────
@@ -170,31 +191,11 @@ object GroupRepository {
         removeMember(groupId, userId)
     }
 
-    // ── Update name / description ──────────────────────────────────────
-    fun update(groupId: UUID, name: String?, description: String?): Boolean = loggedTransaction {
-        ExpenseGroups.update({ ExpenseGroups.id eq groupId }) {
-            if (name != null)        it[ExpenseGroups.name]        = name
-            if (description != null) it[ExpenseGroups.description] = description
-        } > 0
-    }
-
-    // ── Delete (hard) ──────────────────────────────────────────────────
-    fun delete(groupId: UUID): Boolean = loggedTransaction {
-        GroupMembers.deleteWhere { GroupMembers.groupId eq groupId }
-        ExpenseGroups.deleteWhere { ExpenseGroups.id eq groupId } > 0
-    }
-
     // ── Archive ────────────────────────────────────────────────────────
     fun archive(groupId: UUID): Boolean = loggedTransaction {
         ExpenseGroups.update({ ExpenseGroups.id eq groupId }) {
             it[isArchived] = true
             it[archivedAt] = OffsetDateTime.now()
-        } > 0
-    }
-
-    fun unarchive(groupId: UUID): Boolean = loggedTransaction {
-        ExpenseGroups.update({ ExpenseGroups.id eq groupId }) {
-            it[isArchived] = false
         } > 0
     }
 
@@ -211,6 +212,7 @@ object GroupRepository {
     private fun ResultRow.toGroup() = Group(
         id          = this[ExpenseGroups.id],
         name        = this[ExpenseGroups.name],
+        emoji       = this[ExpenseGroups.emoji],
         description = this[ExpenseGroups.description],
         createdBy   = this[ExpenseGroups.createdBy],
         createdAt   = this[ExpenseGroups.createdAt],
@@ -224,6 +226,7 @@ object GroupRepository {
         id       = this[GroupMembers.id],
         groupId  = this[GroupMembers.groupId],
         userId   = this[GroupMembers.userId],
+        name     = this[Users.name],
         role     = this[GroupMembers.role],
         joinedAt = this[GroupMembers.joinedAt]
     )

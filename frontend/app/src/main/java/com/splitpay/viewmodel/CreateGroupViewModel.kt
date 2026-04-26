@@ -1,33 +1,39 @@
 package com.splitpay.viewmodel
 
 import android.app.Application
+import android.content.ContentResolver
+import android.provider.ContactsContract
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.splitpay.data.AppCache
-import com.splitpay.data.model.Group
-import com.splitpay.network.AddMemberRequest
-import com.splitpay.network.CreateGroupRequest
-import com.splitpay.network.PhoneLookupRequest
-import com.splitpay.network.RetrofitClient
-import com.splitpay.network.TokenManager
-import com.splitpay.util.ContactReader
+import com.splitpay.SplitPayApp
+import com.splitpay.data.local.AppCache
+import com.splitpay.data.network.AddMemberRequest
+import com.splitpay.data.network.CreateGroupRequest
+import com.splitpay.data.network.LookupRequest
+import com.splitpay.data.network.RetrofitClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class Contact(
-    val id: String,
+data class AppContact(
+    val userId: String,
     val name: String,
-    val isAdded: Boolean = false,
-    val isOnApp: Boolean = true
+    val phone: String,
+    val email: String = "",
+    val isSelected: Boolean = false
 )
 
-class CreateGroupViewModel(application: Application) : AndroidViewModel(application) {
+data class DeviceContact(
+    val name: String,
+    val phone: String
+)
 
-    private val tokenManager = TokenManager(application)
-    private val api          = RetrofitClient.build(tokenManager)
+class CreateGroupViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val api = RetrofitClient.api
+    private val currentUserId = (app as SplitPayApp).tokenManager.userId
 
     private val _groupName = MutableStateFlow("")
     val groupName: StateFlow<String> = _groupName
@@ -35,10 +41,22 @@ class CreateGroupViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedEmoji = MutableStateFlow("🏠")
     val selectedEmoji: StateFlow<String> = _selectedEmoji
 
-    private val _contacts = MutableStateFlow<List<Contact>>(
-        AppCache.contacts ?: emptyList()  // serve cache immediately on VM creation
-    )
-    val contacts: StateFlow<List<Contact>> = _contacts
+    // Contacts already on SplitPay
+    private val _appContacts = MutableStateFlow<List<AppContact>>(emptyList())
+    val appContacts: StateFlow<List<AppContact>> = _appContacts
+
+    // Contacts NOT on SplitPay
+    private val _nonAppContacts = MutableStateFlow<List<DeviceContact>>(emptyList())
+    val nonAppContacts: StateFlow<List<DeviceContact>> = _nonAppContacts
+
+    private val _isLoadingContacts = MutableStateFlow(false)
+    val isLoadingContacts: StateFlow<Boolean> = _isLoadingContacts
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
 
     val emojis = listOf(
         "🏠", "✈️", "🍕", "🏕️", "🎉", "🛒",
@@ -46,118 +64,94 @@ class CreateGroupViewModel(application: Application) : AndroidViewModel(applicat
         "💼", "🌴", "🍻", "🎓", "💊", "🐾"
     )
 
-    fun onGroupNameChange(value: String) {
-        _groupName.value = value
-    }
+    fun onGroupNameChange(value: String) { _groupName.value = value }
+    fun onEmojiSelected(emoji: String)   { _selectedEmoji.value = emoji }
 
-    fun onEmojiSelected(emoji: String) {
-        _selectedEmoji.value = emoji
-    }
-
-    private val _isSyncing = MutableStateFlow(false)
-    val isSyncing: StateFlow<Boolean> = _isSyncing
-
-    fun onToggleContact(contactId: String) {
-        _contacts.value = _contacts.value.map {
-            if (it.id == contactId) it.copy(isAdded = !it.isAdded) else it
+    fun onToggleContact(userId: String) {
+        _appContacts.value = _appContacts.value.map {
+            if (it.userId == userId) it.copy(isSelected = !it.isSelected) else it
         }
     }
 
-    fun syncContacts() {
+    fun loadContacts(contentResolver: ContentResolver) {
         viewModelScope.launch {
-            _isSyncing.value = true
-            try {
-                val deviceContacts = withContext(Dispatchers.IO) {
-                    ContactReader.read(getApplication())
-                }
-                if (deviceContacts.isNotEmpty()) {
-                    val phones    = deviceContacts.map { it.phone }
-                    val response  = api.lookupUsers(PhoneLookupRequest(phones))
-                    val lookupMap = if (response.isSuccessful)
-                        response.body()?.associate { it.phone to it.userId } ?: emptyMap()
-                    else emptyMap()
+            _isLoadingContacts.value = true
 
-                    val fresh = deviceContacts.map { dc ->
-                        val userId = lookupMap[dc.phone]
-                        Contact(
-                            id      = userId ?: dc.phone,
-                            name    = dc.name,
-                            isOnApp = userId != null
-                        )
+            val deviceContacts = withContext(Dispatchers.IO) { readDeviceContacts(contentResolver) }
+            if (deviceContacts.isEmpty()) { _isLoadingContacts.value = false; return@launch }
+
+            val phones = deviceContacts.map { it.phone }
+
+            runCatching { api.lookupByPhones(LookupRequest(phones)) }
+                .onSuccess { r ->
+                    if (r.isSuccessful) {
+                        val allAppUsers = r.body()!!
+                        val allAppPhones = allAppUsers.map { it.phone }.toSet()
+                        val appUsers = allAppUsers.filter { it.userId != currentUserId }
+
+                        _appContacts.value = appUsers.map {
+                            AppContact(it.userId, it.name ?: "", it.phone ?: "", it.email ?: "")
+                        }
+
+                        // Device contacts whose phone is NOT in the app
+                        _nonAppContacts.value = deviceContacts
+                            .filter { it.phone !in allAppPhones && it.name.isNotBlank() }
+                            .distinctBy { it.phone }
                     }
-                    // Preserve already-toggled selections from cached version
-                    val selected = _contacts.value.filter { it.isAdded }.map { it.id }.toSet()
-                    _contacts.value  = fresh.map { if (it.id in selected) it.copy(isAdded = true) else it }
-                    AppCache.contacts = fresh
                 }
-            } catch (_: Exception) { /* keep showing cached list */ }
-            finally { _isSyncing.value = false }
+
+            _isLoadingContacts.value = false
         }
     }
 
-    private val _createError = MutableStateFlow<String?>(null)
-    val createError: StateFlow<String?> = _createError
-
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading
-
-    fun clearError() { _createError.value = null }
+    private fun readDeviceContacts(cr: ContentResolver): List<DeviceContact> {
+        val result = mutableListOf<DeviceContact>()
+        val cursor = cr.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            ),
+            null, null,
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
+        ) ?: return result
+        cursor.use {
+            val nameCol  = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+            val phoneCol = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            while (it.moveToNext()) {
+                val name  = it.getString(nameCol) ?: continue
+                val phone = it.getString(phoneCol)?.replace("\\s|-".toRegex(), "") ?: continue
+                result.add(DeviceContact(name, phone))
+            }
+        }
+        return result.distinctBy { it.phone }
+    }
 
     fun createGroup(onSuccess: (groupId: String) -> Unit) {
         if (_groupName.value.isBlank()) {
-            _createError.value = "Group name is required"
+            _error.value = "Group name is required"
             return
         }
         viewModelScope.launch {
             _isLoading.value = true
-            _createError.value = null
-            try {
-                val response = api.createGroup(
-                    CreateGroupRequest(
-                        name        = _groupName.value,
-                        description = _selectedEmoji.value
-                    )
-                )
+            _error.value = null
+            runCatching {
+                api.createGroup(CreateGroupRequest(_groupName.value.trim(), _selectedEmoji.value))
+            }.onSuccess { response ->
                 if (response.isSuccessful) {
-                    val groupId  = response.body()!!.id
-                    val selected = _contacts.value.filter { it.isAdded && it.isOnApp }
-
-                    // Add all selected contacts as members
-                    selected.forEach { contact ->
-                        try { api.addMemberToGroup(groupId, AddMemberRequest(contact.id)) }
-                        catch (_: Exception) { }
+                    val groupId = response.body()!!.id
+                    AppCache.groups = null
+                    _appContacts.value.filter { it.isSelected }.forEach { contact ->
+                        runCatching { api.addMember(groupId, AddMemberRequest(contact.userId)) }
                     }
-
-                    // Optimistic cache — populate immediately so GroupDetail shows
-                    // data instantly without waiting for API on first open
-                    val myName = tokenManager.getUserName() ?: "You"
-                    val optimisticMembers = buildList {
-                        add(GroupMember(name = myName, isOnApp = true))
-                        selected.forEach { add(GroupMember(name = it.name, isOnApp = true)) }
-                    }
-                    val optimisticGroup = Group(
-                        id           = groupId,
-                        name         = _groupName.value,
-                        members      = emptyList(),
-                        memberCount  = optimisticMembers.size,
-                        balance      = 0.0,
-                        lastActivity = "",
-                        emoji        = _selectedEmoji.value
-                    )
-                    AppCache.groupDetails[groupId] = optimisticGroup
-                    AppCache.groupMembers[groupId] = optimisticMembers
-                    // Prepend to groups list so it appears immediately at the top
-                    AppCache.groups = listOf(optimisticGroup) + (AppCache.groups ?: emptyList())
-
                     onSuccess(groupId)
                 } else {
-                    _createError.value = "Failed to create group (${response.code()})"
+                    _error.value = "Error ${response.code()}"
                 }
-            } catch (_: Exception) {
-                _createError.value = "Cannot reach server. Check your connection."
-            } finally {
-                _isLoading.value = false
+            }.onFailure {
+                _error.value = "Cannot reach the server"
             }
+            _isLoading.value = false
         }
     }
 }

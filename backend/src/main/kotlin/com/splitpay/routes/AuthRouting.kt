@@ -16,6 +16,9 @@ import java.time.OffsetDateTime
 import java.util.UUID
 
 // ── Request models ─────────────────────────────────────────────────────────
+@Serializable data class LookupRequest(val phones: List<String>)
+@Serializable data class LookupUserResponse(val userId: String, val name: String, val phone: String, val email: String)
+
 @Serializable data class RegisterRequest(
     val name: String,
     val email: String,
@@ -92,8 +95,8 @@ fun Route.authRoutes() {
             if (body.name.isBlank() || body.email.isBlank() || body.password.isBlank())
                 return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Name, email and password are required"))
 
-            if (body.password.length < 8)
-                return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Password must be at least 8 characters"))
+            if (!isValidPassword(body.password))
+                return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Password must be at least 8 characters, include 1 uppercase letter and 1 digit"))
 
             if (UserRepository.findByEmail(body.email) != null)
                 return@post call.respond(HttpStatusCode.Conflict, MessageResponse("Email already in use"))
@@ -186,8 +189,8 @@ fun Route.authRoutes() {
         post("/reset-password") {
             val body = call.receive<ResetPasswordRequest>()
 
-            if (body.newPassword.length < 8)
-                return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Password must be at least 8 characters"))
+            if (!isValidPassword(body.newPassword))
+                return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Password must be at least 8 characters, include 1 uppercase letter and 1 digit"))
 
             val success = UserRepository.resetPassword(body.token, body.newPassword)
             if (success) call.respond(HttpStatusCode.OK, MessageResponse("Password reset successfully. You can now log in."))
@@ -298,6 +301,13 @@ fun Route.authRoutes() {
             if (success) call.respond(HttpStatusCode.OK, MessageResponse("Account deleted. Your data has been anonymized."))
             else call.respond(HttpStatusCode.InternalServerError, MessageResponse("Failed to delete account"))
         }
+
+        // POST /users/lookup — match phone numbers to app users
+        post("/users/lookup") {
+            val body = call.receive<LookupRequest>()
+            val users = UserRepository.findByPhones(body.phones)
+            call.respond(users.map { LookupUserResponse(it.id.toString(), it.name, it.phone ?: "", it.email) })
+        }
     }
 }
 
@@ -324,6 +334,9 @@ private suspend fun verifyGoogleToken(idToken: String): Quad? {
         null
     }
 }
+
+private fun isValidPassword(password: String): Boolean =
+    password.length >= 8 && password.any { it.isUpperCase() } && password.any { it.isDigit() }
 
 private data class Quad(val first: String, val second: String, val third: String, val fourth: String?)
 
