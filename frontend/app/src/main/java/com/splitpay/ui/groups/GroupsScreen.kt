@@ -33,6 +33,26 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.data.model.Group
 import com.splitpay.viewmodel.HomeViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+
+private fun formatActivity(iso: String): String {
+    if (iso.isBlank()) return "RECENTLY"
+    return try {
+        val zdt = java.time.OffsetDateTime.parse(iso)
+        val now = java.time.OffsetDateTime.now()
+        val days = java.time.temporal.ChronoUnit.DAYS.between(zdt.toLocalDate(), now.toLocalDate())
+        when {
+            days == 0L  -> "TODAY"
+            days == 1L  -> "YESTERDAY"
+            days < 7L   -> "$days DAYS AGO"
+            days < 30L  -> "${days / 7}W AGO"
+            days < 365L -> "${days / 30}MO AGO"
+            else        -> "${days / 365}Y AGO"
+        }
+    } catch (_: Exception) { "RECENTLY" }
+}
 
 // ── Brand colors ──────────────────────────────────────────────────────────────
 private val Primary          = Color(0xFF2B348D)
@@ -57,6 +77,16 @@ fun GroupsScreen(
     val groups by viewModel.groups.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
     var searchActive by remember { mutableStateOf(false) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.fetchGroups()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    
 
     val filteredGroups = remember(groups, searchQuery) {
         if (searchQuery.isBlank()) groups
@@ -323,7 +353,7 @@ private fun GroupCard(group: Group, onClick: () -> Unit) {
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = group.lastActivity.uppercase(),
+                    text = formatActivity(group.lastActivity),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = OutlineVariant,

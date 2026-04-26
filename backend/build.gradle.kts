@@ -22,7 +22,7 @@ dependencies {
     // Versions
     val ktor_version = "2.3.1"
     val logback_version = "1.4.11"
-    val exposed_version = "0.41.1"
+    val exposed_version = "0.44.1"
     val postgres_version = "42.6.0"
 
     // Logging
@@ -53,9 +53,10 @@ dependencies {
     implementation("org.jetbrains.exposed:exposed-dao:$exposed_version")
     implementation("org.jetbrains.exposed:exposed-jdbc:$exposed_version")
     implementation("org.postgresql:postgresql:$postgres_version")
+    implementation("com.zaxxer:HikariCP:5.1.0")
 
     // Exposed DateTime support (for timestampWithTimeZone)
-    implementation("org.jetbrains.exposed:exposed-java-time:0.44.1")
+    implementation("org.jetbrains.exposed:exposed-java-time:$exposed_version")
 
 
     // Tests

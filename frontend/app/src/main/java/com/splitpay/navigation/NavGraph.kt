@@ -15,13 +15,26 @@ import com.splitpay.ui.expense.AddExpenseScreen
 import com.splitpay.ui.group.GroupDetailScreen
 import com.splitpay.ui.profile.ProfileScreen
 import com.splitpay.ui.settlement.SettlementScreen
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import com.splitpay.data.local.TokenManager
+
 
 @Composable
 fun NavGraph(navController: NavHostController) {
 
+    val context = LocalContext.current
+    val tokenManager = remember { TokenManager(context) }
+    
+    val startDestination = if (tokenManager.isLoggedIn()) {
+        Screen.Home.route
+    } else {
+        Screen.Login.route
+    }
+
     NavHost(
         navController = navController,
-        startDestination = Screen.Login.route
+        startDestination = startDestination
     ) {
 
         // ─── Auth ─────────────────────────────────────────
@@ -97,7 +110,12 @@ fun NavGraph(navController: NavHostController) {
         // ─── Create Group ────────────────────────────────────
         composable(Screen.CreateGroup.route) {
             CreateGroupScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onGroupCreated = { groupId ->
+                    navController.navigate(Screen.GroupDetail.createRoute(groupId)) {
+                        popUpTo(Screen.CreateGroup.route) { inclusive = true }
+                    }
+                }
             )
         }
 

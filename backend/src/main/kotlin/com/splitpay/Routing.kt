@@ -1,6 +1,7 @@
 package com.splitpay
 
 import com.splitpay.routes.authRoutes
+import com.splitpay.routes.expenseRoutes
 import com.splitpay.routes.groupRoutes
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -49,5 +50,8 @@ fun Application.configureRouting() {
 
         // Group routes
         groupRoutes()
+
+        // Expense routes (expenses, balances, settlements)
+        expenseRoutes()
     }
 }

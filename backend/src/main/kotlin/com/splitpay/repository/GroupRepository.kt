@@ -2,7 +2,9 @@ package com.splitpay.repository
 
 import com.splitpay.database.loggedTransaction
 import com.splitpay.database.tables.ExpenseGroups
+import com.splitpay.database.tables.Expenses
 import com.splitpay.database.tables.GroupMembers
+import com.splitpay.database.tables.Users
 import org.jetbrains.exposed.sql.*
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -11,6 +13,7 @@ import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 data class Group(
     val id: UUID,
     val name: String,
+    val emoji: String,
     val description: String?,
     val createdBy: UUID,
     val createdAt: OffsetDateTime,
@@ -24,6 +27,7 @@ data class GroupMember(
     val id: UUID,
     val groupId: UUID,
     val userId: UUID,
+    val name: String,
     val role: String,
     val joinedAt: OffsetDateTime
 )
@@ -31,23 +35,35 @@ data class GroupMember(
 object GroupRepository {
 
     // ── Create ─────────────────────────────────────────────────────────
-    fun create(name: String, description: String?, createdBy: UUID): Group = loggedTransaction {
+    fun create(name: String, emoji: String, description: String?, createdBy: UUID): Group = loggedTransaction {
         val token = UUID.randomUUID().toString()
         val id = ExpenseGroups.insert {
             it[ExpenseGroups.name]        = name
+            it[ExpenseGroups.emoji]       = emoji
             it[ExpenseGroups.description] = description
             it[ExpenseGroups.createdBy]   = createdBy
             it[ExpenseGroups.inviteToken] = token
+            it[ExpenseGroups.createdAt]   = OffsetDateTime.now()
         }[ExpenseGroups.id]
 
         // Creator becomes admin
         GroupMembers.insert {
-            it[GroupMembers.groupId] = id
-            it[GroupMembers.userId]  = createdBy
-            it[GroupMembers.role]    = "admin"
+            it[GroupMembers.groupId]  = id
+            it[GroupMembers.userId]   = createdBy
+            it[GroupMembers.role]     = "admin"
+            it[GroupMembers.joinedAt] = OffsetDateTime.now()
         }
 
         findById(id)!!
+    }
+
+    // ── Update ─────────────────────────────────────────────────────────
+    fun update(groupId: UUID, name: String, emoji: String?, description: String?): Boolean = loggedTransaction {
+        ExpenseGroups.update({ ExpenseGroups.id eq groupId }) {
+            it[ExpenseGroups.name] = name
+            if (emoji != null) it[ExpenseGroups.emoji] = emoji
+            if (description != null) it[ExpenseGroups.description] = description
+        } > 0
     }
 
     // ── Finders ────────────────────────────────────────────────────────
@@ -69,7 +85,8 @@ object GroupRepository {
 
     // ── Members ────────────────────────────────────────────────────────
     fun getMembers(groupId: UUID): List<GroupMember> = loggedTransaction {
-        GroupMembers.select { GroupMembers.groupId eq groupId }
+        (GroupMembers innerJoin Users)
+            .select { GroupMembers.groupId eq groupId }
             .map { it.toMember() }
     }
 
@@ -77,8 +94,25 @@ object GroupRepository {
         GroupMembers.select { GroupMembers.groupId eq groupId }.count().toInt()
     }
 
+    fun getMemberCounts(groupIds: List<UUID>): Map<UUID, Int> = loggedTransaction {
+        GroupMembers
+            .slice(GroupMembers.groupId, GroupMembers.groupId.count())
+            .select { GroupMembers.groupId inList groupIds }
+            .groupBy(GroupMembers.groupId)
+            .associate { it[GroupMembers.groupId] to it[GroupMembers.groupId.count()].toInt() }
+    }
+
+    fun getLastActivities(groupIds: List<UUID>): Map<UUID, OffsetDateTime> = loggedTransaction {
+        val maxCreatedAt = Expenses.createdAt.max()
+        Expenses
+            .slice(Expenses.groupId, maxCreatedAt)
+            .select { Expenses.groupId inList groupIds }
+            .groupBy(Expenses.groupId)
+            .associate { it[Expenses.groupId] to it[maxCreatedAt]!! }
+    }
+
     fun getMember(groupId: UUID, userId: UUID): GroupMember? = loggedTransaction {
-        GroupMembers.select {
+        (GroupMembers innerJoin Users).select {
             (GroupMembers.groupId eq groupId) and (GroupMembers.userId eq userId)
         }.singleOrNull()?.toMember()
     }
@@ -88,6 +122,16 @@ object GroupRepository {
 
     fun isAdmin(groupId: UUID, userId: UUID): Boolean =
         getMember(groupId, userId)?.role == "admin"
+
+    // ── Add member directly ────────────────────────────────────────────
+    fun addMember(groupId: UUID, userId: UUID) = loggedTransaction {
+        GroupMembers.insert {
+            it[GroupMembers.groupId]  = groupId
+            it[GroupMembers.userId]   = userId
+            it[GroupMembers.role]     = "member"
+            it[GroupMembers.joinedAt] = OffsetDateTime.now()
+        }
+    }
 
     // ── Join via invite link ────────────────────────────────────────────
     fun joinByToken(token: String, userId: UUID): Group? = loggedTransaction {
@@ -101,9 +145,10 @@ object GroupRepository {
         if (isMember(group.id, userId)) return@loggedTransaction group
 
         GroupMembers.insert {
-            it[GroupMembers.groupId] = group.id
-            it[GroupMembers.userId]  = userId
-            it[GroupMembers.role]    = "member"
+            it[GroupMembers.groupId]  = group.id
+            it[GroupMembers.userId]   = userId
+            it[GroupMembers.role]     = "member"
+            it[GroupMembers.joinedAt] = OffsetDateTime.now()
         }
         group
     }
@@ -167,6 +212,7 @@ object GroupRepository {
     private fun ResultRow.toGroup() = Group(
         id          = this[ExpenseGroups.id],
         name        = this[ExpenseGroups.name],
+        emoji       = this[ExpenseGroups.emoji],
         description = this[ExpenseGroups.description],
         createdBy   = this[ExpenseGroups.createdBy],
         createdAt   = this[ExpenseGroups.createdAt],
@@ -180,6 +226,7 @@ object GroupRepository {
         id       = this[GroupMembers.id],
         groupId  = this[GroupMembers.groupId],
         userId   = this[GroupMembers.userId],
+        name     = this[Users.name],
         role     = this[GroupMembers.role],
         joinedAt = this[GroupMembers.joinedAt]
     )

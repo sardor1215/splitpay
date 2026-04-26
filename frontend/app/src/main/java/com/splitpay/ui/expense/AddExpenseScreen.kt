@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,11 +55,15 @@ fun AddExpenseScreen(
     onNavigateBack: () -> Unit,
     viewModel: AddExpenseViewModel = viewModel()
 ) {
-    val amount       by viewModel.amount.collectAsStateWithLifecycle()
-    val description  by viewModel.description.collectAsStateWithLifecycle()
-    val paidBy       by viewModel.paidBy.collectAsStateWithLifecycle()
-    val splitMode    by viewModel.splitMode.collectAsStateWithLifecycle()
-    val participants by viewModel.participants.collectAsStateWithLifecycle()
+    LaunchedEffect(groupId) { viewModel.loadParticipants(groupId) }
+
+    val amount        by viewModel.amount.collectAsStateWithLifecycle()
+    val description   by viewModel.description.collectAsStateWithLifecycle()
+    val paidBy        by viewModel.paidBy.collectAsStateWithLifecycle()
+    val paidByUserId  by viewModel.paidByUserId.collectAsStateWithLifecycle()
+    val splitMode     by viewModel.splitMode.collectAsStateWithLifecycle()
+    val category      by viewModel.category.collectAsStateWithLifecycle()
+    val participants  by viewModel.participants.collectAsStateWithLifecycle()
     var showPaidByDialog by remember { mutableStateOf(false) }
 
     // ── Paid By dialog ────────────────────────────────────────────────────
@@ -74,18 +79,18 @@ fun AddExpenseScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    val payers = listOf("You") + participants.map { it.name }.filter { it != "You" }
-                    payers.forEach { name ->
+                    participants.forEach { p ->
+                        val isSelected = p.id == paidByUserId
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(
-                                    if (name == paidBy) Primary.copy(alpha = 0.08f)
+                                    if (isSelected) Primary.copy(alpha = 0.08f)
                                     else Color.Transparent
                                 )
                                 .clickable {
-                                    viewModel.onPaidByChange(name)
+                                    viewModel.onPaidByChange(p.id, p.name)
                                     showPaidByDialog = false
                                 }
                                 .padding(horizontal = 12.dp, vertical = 14.dp),
@@ -93,12 +98,12 @@ fun AddExpenseScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = name,
+                                text = p.name,
                                 fontSize = 15.sp,
-                                fontWeight = if (name == paidBy) FontWeight.Bold else FontWeight.Normal,
-                                color = if (name == paidBy) Primary else OnSurface
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Primary else OnSurface
                             )
-                            if (name == paidBy) {
+                            if (isSelected) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = null,
@@ -284,6 +289,56 @@ fun AddExpenseScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
+            // ── Category ──────────────────────────────────────────────────
+            Column {
+                Text(
+                    text = "CATEGORY",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = OnSurfaceVariant.copy(alpha = 0.6f),
+                    letterSpacing = 1.5.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                val categories = listOf(
+                    "food" to "🍕", "transport" to "🚗", "accommodation" to "🏠",
+                    "entertainment" to "🎮", "shopping" to "🛒", "health" to "💊",
+                    "utilities" to "💡", "other" to "📦"
+                )
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(categories) { (key, emoji) ->
+                        val isSelected = category == key
+                        Box(
+                            modifier = Modifier
+                                .shadow(
+                                    elevation = if (isSelected) 4.dp else 0.dp,
+                                    shape = RoundedCornerShape(12.dp),
+                                    spotColor = Primary.copy(alpha = 0.12f)
+                                )
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) Primary else SurfaceLow)
+                                .clickable { viewModel.onCategoryChange(key) }
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = emoji, fontSize = 20.sp)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = key.replaceFirstChar { it.uppercase() },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isSelected) Color.White else OnSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
             // ── Split mode ────────────────────────────────────────────────
             Column {
                 Text(
@@ -402,7 +457,7 @@ fun AddExpenseScreen(
                     letterSpacing = (-0.5).sp
                 )
                 TextButton(onClick = {
-                    viewModel.saveExpense { onNavigateBack() }
+                    viewModel.saveExpense(groupId) { onNavigateBack() }
                 }) {
                     Text(
                         text = "Save",
@@ -432,7 +487,7 @@ fun AddExpenseScreen(
                             colors = listOf(Primary, PrimaryContainer)
                         )
                     )
-                    .clickable { viewModel.saveExpense { onNavigateBack() } },
+                    .clickable { viewModel.saveExpense(groupId) { onNavigateBack() } },
                 contentAlignment = Alignment.Center
             ) {
                 Text(

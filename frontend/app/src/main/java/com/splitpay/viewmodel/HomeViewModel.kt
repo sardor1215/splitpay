@@ -1,57 +1,63 @@
 package com.splitpay.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.splitpay.SplitPayApp
 import com.splitpay.data.model.Group
+import com.splitpay.data.network.RetrofitClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import com.splitpay.data.local.AppCache
 
-class HomeViewModel : ViewModel() {
+class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
-    // ── UI State ──────────────────────────────────────────────────────────
+    private val tokenManager = (app as SplitPayApp).tokenManager
+    private val api = RetrofitClient.api
+
     private val _groups = MutableStateFlow<List<Group>>(emptyList())
     val groups: StateFlow<List<Group>> = _groups
 
-    private val _totalOwed = MutableStateFlow(0.0)
-    val totalOwed: StateFlow<Double> = _totalOwed
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading
 
-    private val _totalOwe = MutableStateFlow(0.0)
-    val totalOwe: StateFlow<Double> = _totalOwe
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
 
-    init {
-        loadMockData()
-    }
+    val userInitial: String
+        get() = tokenManager.userName?.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
 
-    // ── Mock data (remplacé par API plus tard) ────────────────────────────
-    private fun loadMockData() {
-        val mockGroups = listOf(
-            Group(
-                id = "1",
-                name = "Trip to Berlin",
-                members = listOf("Alex", "Sarah", "Tom", "You"),
-                balance = 120.0,
-                lastActivity = "Active now",
-                emoji = "✈️"
-            ),
-            Group(
-                id = "2",
-                name = "Apartment Expenses",
-                members = listOf("Roommate", "You"),
-                balance = -300.0,
-                lastActivity = "2 days ago",
-                emoji = "🏠"
-            ),
-            Group(
-                id = "3",
-                name = "Weekend Hike",
-                members = listOf("Alex", "Sarah", "Tom", "Emma", "Jake", "You"),
-                balance = 0.0,
-                lastActivity = "Last week",
-                emoji = "🏕️"
-            )
-        )
+    val userName: String
+        get() = tokenManager.userName ?: ""
 
-        _groups.value = mockGroups
-        _totalOwed.value = mockGroups.filter { it.balance > 0 }.sumOf { it.balance }
-        _totalOwe.value = mockGroups.filter { it.balance < 0 }.sumOf { -it.balance }
+    init { fetchGroups() }
+
+    fun fetchGroups() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+            runCatching { api.getGroups() }
+                .onSuccess { response ->
+                    if (response.isSuccessful) {
+                        val groups = response.body().orEmpty().map { g ->
+                            Group(
+                                id           = g.id,
+                                name         = g.name,
+                                emoji        = g.emoji,
+                                members      = List(g.memberCount) { "" },
+                                balance      = g.userBalance,
+                                lastActivity = g.lastActivityAt,
+                                isArchived   = g.isArchived,
+                                inviteToken  = g.inviteToken
+                            )
+                        }
+                        AppCache.groups = groups  // ← met à jour le cache avec la nouvelle liste
+                        _groups.value = groups
+                    }
+                }
+                .onFailure { _error.value = "Cannot reach server" }
+            _isLoading.value = false
+        }
     }
 }

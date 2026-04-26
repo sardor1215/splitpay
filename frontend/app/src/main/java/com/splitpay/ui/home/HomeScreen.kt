@@ -24,6 +24,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.data.model.Group
@@ -51,9 +54,18 @@ fun HomeScreen(
     onNavigateToSettlement: (String) -> Unit,
     homeViewModel: HomeViewModel = viewModel()
 ) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) homeViewModel.fetchGroups()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val groups by homeViewModel.groups.collectAsStateWithLifecycle()
-    val totalOwed by homeViewModel.totalOwed.collectAsStateWithLifecycle()
-    val totalOwe by homeViewModel.totalOwe.collectAsStateWithLifecycle()
+    val totalOwed = groups.filter { it.balance > 0 }.sumOf { it.balance }
+    val totalOwe = groups.filter { it.balance < 0 }.sumOf { -it.balance }
     var selectedTab by remember { mutableIntStateOf(0) }
 
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
@@ -135,7 +147,7 @@ fun HomeScreen(
             }
 
             // ── Group items ───────────────────────────────────────────────
-            items(groups) { group ->
+            items(groups.take(5)) { group ->
                 GroupItem(
                     group = group,
                     onClick = { onNavigateToGroup(group.id) }
@@ -276,6 +288,23 @@ fun BalanceCard(
     }
 }
 
+private fun formatActivity(iso: String): String {
+    if (iso.isBlank()) return "RECENTLY"
+    return try {
+        val zdt = java.time.OffsetDateTime.parse(iso)
+        val now = java.time.OffsetDateTime.now()
+        val days = java.time.temporal.ChronoUnit.DAYS.between(zdt.toLocalDate(), now.toLocalDate())
+        when {
+            days == 0L  -> "TODAY"
+            days == 1L  -> "YESTERDAY"
+            days < 7L   -> "$days DAYS AGO"
+            days < 30L  -> "${days / 7}W AGO"
+            days < 365L -> "${days / 30}MO AGO"
+            else        -> "${days / 365}Y AGO"
+        }
+    } catch (_: Exception) { "RECENTLY" }
+}
+
 // ── Group Item ────────────────────────────────────────────────────────────────
 @Composable
 fun GroupItem(
@@ -341,7 +370,7 @@ fun GroupItem(
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = group.lastActivity.uppercase(),
+                    text = formatActivity(group.lastActivity),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = OutlineVariant,

@@ -30,7 +30,7 @@ object UserRepository {
 
     // ── Create ────────────────────────────────────────────────────────────
     fun create(name: String, email: String, password: String, phone: String? = null): User = loggedTransaction {
-        val hash = BCrypt.hashpw(password, BCrypt.gensalt())
+        val hash = BCrypt.hashpw(password, BCrypt.gensalt(12))
         val id = Users.insert {
             it[Users.name]          = name
             it[Users.email]         = email
@@ -48,6 +48,7 @@ object UserRepository {
             it[Users.googleId]   = googleId
             it[Users.avatarUrl]  = avatarUrl
             it[Users.isVerified] = true
+            it[Users.createdAt]  = OffsetDateTime.now()
         }[Users.id]
         findById(id)!!
     }
@@ -78,6 +79,10 @@ object UserRepository {
             .singleOrNull()?.toUser()
     }
 
+    fun findByPhones(phones: List<String>): List<User> = loggedTransaction {
+        Users.select { Users.phone inList phones }.map { it.toUser() }
+    }
+
     // ── Auth helpers ──────────────────────────────────────────────────────
     fun verifyPassword(user: User, password: String): Boolean =
         user.passwordHash != null && BCrypt.checkpw(password, user.passwordHash)
@@ -103,7 +108,7 @@ object UserRepository {
             return@loggedTransaction false
         }
         Users.update({ Users.passwordResetToken eq token }) {
-            it[passwordHash]           = BCrypt.hashpw(newPassword, BCrypt.gensalt())
+            it[passwordHash]           = BCrypt.hashpw(newPassword, BCrypt.gensalt(12))
             it[passwordResetToken]     = null
             it[passwordResetExpiresAt] = null
         } > 0
