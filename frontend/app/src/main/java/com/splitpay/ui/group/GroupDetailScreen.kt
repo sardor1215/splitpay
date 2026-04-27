@@ -101,6 +101,7 @@ fun GroupDetailScreen(
     var editedEmoji      by remember { mutableStateOf("") }
     var memberToRemove   by remember { mutableStateOf<GroupMember?>(null) }
     var expenseToDelete  by remember { mutableStateOf<com.splitpay.data.model.Expense?>(null) }
+    var expenseToEdit    by remember { mutableStateOf<com.splitpay.data.model.Expense?>(null) }
     var searchQuery      by remember { mutableStateOf("") }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -132,6 +133,20 @@ fun GroupDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { expenseToDelete = null }) { Text("Cancel", color = OnSurfaceVariant) }
+            }
+        )
+    }
+
+    // ── Edit expense dialog ───────────────────────────────────────────────────
+    expenseToEdit?.let { expense ->
+        EditExpenseDialog(
+            expense  = expense,
+            members  = members,
+            onDismiss = { expenseToEdit = null },
+            onSave = { title, amount, paidByUserId, splitMode, category ->
+                viewModel.editExpense(groupId, expense.id, title, amount, paidByUserId, splitMode, category) {
+                    expenseToEdit = null
+                }
             }
         )
     }
@@ -542,7 +557,8 @@ fun GroupDetailScreen(
             }
             items(expenses) { expense ->
                 ExpenseItem(
-                    expense = expense,
+                    expense  = expense,
+                    onEdit   = if (isAdmin) { { expenseToEdit = expense } } else null,
                     onDelete = if (isAdmin) { { expenseToDelete = expense } } else null
                 )
                 Spacer(modifier = Modifier.height(10.dp))
@@ -667,7 +683,7 @@ private val categoryEmoji = mapOf(
 )
 
 @Composable
-fun ExpenseItem(expense: Expense, onDelete: (() -> Unit)? = null) {
+fun ExpenseItem(expense: Expense, onEdit: (() -> Unit)? = null, onDelete: (() -> Unit)? = null) {
     val accentColor = when { expense.yourShare > 0 -> Secondary; expense.yourShare < 0 -> TertiaryFixedDim; else -> OutlineVariant }
     val shareText = when { expense.yourShare > 0 -> "You get back $${String.format("%.2f", expense.yourShare)}"; expense.yourShare < 0 -> "You owe $${String.format("%.2f", -expense.yourShare)}"; else -> "Settled" }
     val shareColor = when { expense.yourShare > 0 -> Secondary; expense.yourShare < 0 -> Tertiary; else -> OnSurfaceVariant }
@@ -691,6 +707,16 @@ fun ExpenseItem(expense: Expense, onDelete: (() -> Unit)? = null) {
                     Text("$${String.format("%.2f", expense.amount)}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Primary)
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(shareText.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = shareColor, letterSpacing = 0.5.sp)
+                }
+                if (onEdit != null) {
+                    Box(
+                        modifier = Modifier.size(30.dp).clip(CircleShape)
+                            .background(Primary.copy(alpha = 0.08f))
+                            .clickable { onEdit() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Primary, modifier = Modifier.size(15.dp))
+                    }
                 }
                 if (onDelete != null) {
                     Box(
@@ -719,4 +745,147 @@ fun SettlementRow(settlement: Settlement) {
         }
         Text("$${String.format("%.2f", settlement.amount)}", fontWeight = FontWeight.Black, fontSize = 15.sp, color = if (settlement.owesYou) Secondary else Tertiary)
     }
+}
+
+// ── Edit Expense Dialog ───────────────────────────────────────────────────────
+private val expenseCategoryEmojis = mapOf(
+    "food" to "🍕", "transport" to "🚗", "accommodation" to "🏠",
+    "entertainment" to "🎮", "shopping" to "🛒", "health" to "💊",
+    "utilities" to "💡", "other" to "📦", "settlement" to "💸"
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditExpenseDialog(
+    expense: Expense,
+    members: List<GroupMember>,
+    onDismiss: () -> Unit,
+    onSave: (title: String, amount: Double, paidByUserId: String, splitMode: String, category: String) -> Unit
+) {
+    var title     by remember { mutableStateOf(expense.title) }
+    var amount    by remember { mutableStateOf(expense.amount.toString()) }
+    var category  by remember { mutableStateOf(expense.category) }
+    var splitMode by remember { mutableStateOf(expense.splitMode) }
+    var paidById  by remember { mutableStateOf(expense.paidById) }
+    var paidByName by remember { mutableStateOf(expense.paidBy) }
+    var showPaidByPicker by remember { mutableStateOf(false) }
+
+    val categories = listOf("food","transport","accommodation","entertainment","shopping","health","utilities","other")
+    val splitModes = listOf("equally","exact","percentage")
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceContainerLowest,
+        shape = RoundedCornerShape(24.dp),
+        title = {
+            Text("Edit Expense", fontWeight = FontWeight.Bold, color = Primary, fontSize = 18.sp)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+                // Title
+                Column {
+                    Text("TITLE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = OnSurfaceVariant.copy(0.6f), letterSpacing = 1.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(SurfaceContainerLow).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        BasicTextField(
+                            value = title, onValueChange = { title = it }, singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = OnSurface, fontWeight = FontWeight.Medium),
+                            cursorBrush = SolidColor(Primary), modifier = Modifier.fillMaxWidth(),
+                            decorationBox = { inner ->
+                                if (title.isEmpty()) Text("Expense name", fontSize = 15.sp, color = OutlineVariant)
+                                inner()
+                            }
+                        )
+                    }
+                }
+
+                // Amount
+                Column {
+                    Text("AMOUNT", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = OnSurfaceVariant.copy(0.6f), letterSpacing = 1.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(SurfaceContainerLow).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        BasicTextField(
+                            value = amount, onValueChange = { amount = it }, singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = OnSurface, fontWeight = FontWeight.Medium),
+                            cursorBrush = SolidColor(Primary), modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                            decorationBox = { inner ->
+                                if (amount.isEmpty()) Text("0.00", fontSize = 15.sp, color = OutlineVariant)
+                                inner()
+                            }
+                        )
+                    }
+                }
+
+                // Paid by
+                Column {
+                    Text("PAID BY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = OnSurfaceVariant.copy(0.6f), letterSpacing = 1.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(SurfaceContainerLow)
+                            .clickable { showPaidByPicker = !showPaidByPicker }.padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(paidByName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = OnSurface)
+                            Icon(Icons.Default.Edit, null, tint = Primary, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                    if (showPaidByPicker) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            members.forEach { m ->
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                                        .background(if (m.userId == paidById) Primary.copy(0.08f) else SurfaceContainerLow)
+                                        .clickable { paidById = m.userId; paidByName = m.name; showPaidByPicker = false }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                                ) {
+                                    Text(m.name, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                        color = if (m.userId == paidById) Primary else OnSurface)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Category chips
+                Column {
+                    Text("CATEGORY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = OnSurfaceVariant.copy(0.6f), letterSpacing = 1.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(categories) { key ->
+                            val sel = category == key
+                            Box(
+                                modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                                    .background(if (sel) Primary else SurfaceContainerLow)
+                                    .clickable { category = key }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(expenseCategoryEmojis[key] ?: "📦", fontSize = 16.sp)
+                                    Text(key.replaceFirstChar { it.uppercase() }, fontSize = 10.sp,
+                                        color = if (sel) Color.White else OnSurfaceVariant, fontWeight = FontWeight.Medium)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Box(
+                modifier = Modifier.clip(RoundedCornerShape(50))
+                    .background(Brush.linearGradient(listOf(Primary, PrimaryContainer)))
+                    .clickable {
+                        val amt = amount.toDoubleOrNull() ?: return@clickable
+                        if (title.isNotBlank() && amt > 0) onSave(title, amt, paidById, splitMode, category)
+                    }
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+            ) { Text("Save", color = Color.White, fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = OnSurfaceVariant) }
+        }
+    )
 }

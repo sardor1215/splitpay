@@ -11,7 +11,9 @@ import com.splitpay.data.model.Expense
 import com.splitpay.data.model.Group
 import com.splitpay.data.network.AddMemberRequest
 import com.splitpay.data.network.LookupRequest
+import com.splitpay.data.network.ParticipantRequest
 import com.splitpay.data.network.RetrofitClient
+import com.splitpay.data.network.UpdateExpenseRequest
 import com.splitpay.data.network.UpdateGroupRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -285,6 +287,56 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
                     _groupDeleted.value = true
                 } else {
                     _error.value = "Failed to delete group"
+                }
+            }.onFailure { _error.value = "Cannot reach server" }
+        }
+    }
+
+    fun editExpense(
+        groupId: String,
+        expenseId: String,
+        title: String,
+        amount: Double,
+        paidByUserId: String,
+        splitMode: String,
+        category: String,
+        onSuccess: () -> Unit
+    ) {
+        if (title.isBlank() || amount <= 0) return
+        val participantIds = _expenses.value.find { it.id == expenseId }?.participants ?: return
+        val share = amount / participantIds.size.coerceAtLeast(1)
+        viewModelScope.launch {
+            runCatching {
+                api.updateExpense(
+                    groupId,
+                    expenseId,
+                    UpdateExpenseRequest(
+                        title        = title.trim(),
+                        amount       = amount,
+                        paidBy       = paidByUserId,
+                        splitMode    = splitMode,
+                        category     = category,
+                        participants = participantIds.map { ParticipantRequest(it, share) }
+                    )
+                )
+            }.onSuccess { r ->
+                if (r.isSuccessful) {
+                    val updated = r.body()!!
+                    _expenses.value = _expenses.value.map { e ->
+                        if (e.id == expenseId) e.copy(
+                            title     = updated.title,
+                            amount    = updated.amount,
+                            paidBy    = updated.paidByName,
+                            paidById  = updated.paidBy,
+                            category  = updated.category ?: "other",
+                            splitMode = updated.splitMode ?: "equally"
+                        ) else e
+                    }
+                    _totalSpending.value = _expenses.value.sumOf { it.amount }
+                    AppCache.expensesByGroup.remove(groupId)
+                    onSuccess()
+                } else {
+                    _error.value = "Failed to update expense"
                 }
             }.onFailure { _error.value = "Cannot reach server" }
         }
