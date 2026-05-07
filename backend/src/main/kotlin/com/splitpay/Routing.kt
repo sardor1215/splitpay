@@ -1,8 +1,12 @@
 package com.splitpay
 
+import com.splitpay.plugins.ActivityTrackerPlugin
+import com.splitpay.routes.adminRoutes
+
 import com.splitpay.routes.authRoutes
 import com.splitpay.routes.expenseRoutes
 import com.splitpay.routes.groupRoutes
+import com.splitpay.routes.kycRoutes
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.plugins.cors.routing.*
@@ -11,6 +15,9 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
 fun Application.configureRouting() {
+
+    // Activity tracking — fires after every successful JWT auth, across all routes
+    install(ActivityTrackerPlugin)
 
     // CORS — allow frontend to call backend
     install(CORS) {
@@ -53,5 +60,11 @@ fun Application.configureRouting() {
 
         // Expense routes (expenses, balances, settlements)
         expenseRoutes()
+
+        // Admin routes
+        adminRoutes()
+
+        // KYC routes
+        kycRoutes()
     }
 }

@@ -20,6 +20,10 @@ object Users : Table("users") {
     val preferredCurrency     = char("preferred_currency", 3).default("USD")
     val isDeleted             = bool("is_deleted").default(false)
     val deletedAt             = timestampWithTimeZone("deleted_at").nullable()
+    val isAdmin               = bool("is_admin").default(false)
+    val lastActivityAt        = timestampWithTimeZone("last_activity_at").nullable()
+    val amlStatus             = varchar("aml_status", 20).default("clear")   // clear | flagged | suspended
+    val kycStatus             = varchar("kyc_status", 20).default("none")    // none | pending | approved | rejected
 
     override val primaryKey = PrimaryKey(id)
 }

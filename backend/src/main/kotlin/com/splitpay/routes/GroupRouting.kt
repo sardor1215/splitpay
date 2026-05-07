@@ -2,6 +2,7 @@ package com.splitpay.routes
 
 import com.splitpay.repository.ExpenseRepository
 import com.splitpay.repository.GroupRepository
+import com.splitpay.service.FcmService
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
@@ -161,6 +162,13 @@ fun Route.groupRoutes() {
 
                     GroupRepository.addMember(groupId, memberId)
                     call.respond(HttpStatusCode.OK, MessageResponse("Member added"))
+                    // Notify all members (including the new one)
+                    val memberIds = GroupRepository.getMembers(groupId).map { it.userId }
+                    val group = GroupRepository.findById(groupId)
+                    runCatching {
+                        FcmService.notifyGroupMembers(groupId, adminId, memberIds,
+                            "New member", "A new member joined ${group?.name ?: "the group"}")
+                    }
                 }
 
                 // DELETE /groups/:id/members/:userId — remove member
@@ -247,6 +255,11 @@ fun Route.groupRoutes() {
                     if (success) {
                         val group = GroupRepository.findById(groupId)!!
                         call.respond(group.toResponse())
+                        val memberIds = GroupRepository.getMembers(groupId).map { it.userId }
+                        runCatching {
+                            FcmService.notifyGroupMembers(groupId, userId, memberIds,
+                                "Group updated", "\"${body.name}\" has been renamed")
+                        }
                     } else {
                         call.respond(HttpStatusCode.NotFound, MessageResponse("Group not found"))
                     }

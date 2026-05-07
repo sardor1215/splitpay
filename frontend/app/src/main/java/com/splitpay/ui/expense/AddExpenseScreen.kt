@@ -64,7 +64,14 @@ fun AddExpenseScreen(
     val splitMode     by viewModel.splitMode.collectAsStateWithLifecycle()
     val category      by viewModel.category.collectAsStateWithLifecycle()
     val participants  by viewModel.participants.collectAsStateWithLifecycle()
+    val isLoading     by viewModel.isLoading.collectAsStateWithLifecycle()
+    val error         by viewModel.error.collectAsStateWithLifecycle()
     var showPaidByDialog by remember { mutableStateOf(false) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(error) {
+        if (error != null) snackbarHostState.showSnackbar(error!!)
+    }
 
     // ── Paid By dialog ────────────────────────────────────────────────────
     if (showPaidByDialog) {
@@ -121,10 +128,12 @@ fun AddExpenseScreen(
         )
     }
 
+    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }, containerColor = Surface) { scaffoldPadding ->
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Surface)
+            .padding(scaffoldPadding)
     ) {
 
         // ── Scrollable content ────────────────────────────────────────────
@@ -420,8 +429,25 @@ fun AddExpenseScreen(
                 participants.forEach { participant ->
                     ParticipantRow(
                         participant = participant,
-                        onToggle = { viewModel.onToggleParticipant(participant.id) }
+                        splitMode   = splitMode,
+                        onToggle    = { viewModel.onToggleParticipant(participant.id) },
+                        onExactChange   = { viewModel.onExactShareChange(participant.id, it) },
+                        onPercentChange = { viewModel.onPercentChange(participant.id, it) }
                     )
+                }
+            }
+
+            // Validation hint for exact/percent
+            if (splitMode != SplitMode.EQUALLY) {
+                val total   = amount.toDoubleOrNull() ?: 0.0
+                val sumShares = participants.filter { it.isIncluded }.sumOf { it.share }
+                val remaining = total - sumShares
+                if (total > 0 && kotlin.math.abs(remaining) > 0.01) {
+                    Spacer(Modifier.height(8.dp))
+                    val label = if (splitMode == SplitMode.EXACT) "Remaining: $${"%.2f".format(remaining)}"
+                                else "Remaining: ${"%.1f".format(remaining / total * 100)}%"
+                    Text(label, fontSize = 12.sp, color = if (remaining > 0) Color(0xFFB45309) else Color(0xFF84000C),
+                        fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -484,116 +510,118 @@ fun AddExpenseScreen(
                     .clip(RoundedCornerShape(50))
                     .background(
                         brush = Brush.linearGradient(
-                            colors = listOf(Primary, PrimaryContainer)
+                            colors = if (isLoading) listOf(Primary.copy(alpha = 0.6f), PrimaryContainer.copy(alpha = 0.6f))
+                                     else listOf(Primary, PrimaryContainer)
                         )
                     )
-                    .clickable { viewModel.saveExpense(groupId) { onNavigateBack() } },
+                    .clickable(enabled = !isLoading) { viewModel.saveExpense(groupId) { onNavigateBack() } },
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Save Expense",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
+                if (isLoading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
+                else Text("Save Expense", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
     }
+    } // Scaffold
 }
 
 // ── Participant Row ────────────────────────────────────────────────────────────
 @Composable
 fun ParticipantRow(
     participant: Participant,
-    onToggle: () -> Unit
+    splitMode: SplitMode = SplitMode.EQUALLY,
+    onToggle: () -> Unit,
+    onExactChange: (String) -> Unit = {},
+    onPercentChange: (String) -> Unit = {}
 ) {
-    Row(
+    var exactInput   by remember(participant.id, splitMode) { mutableStateOf("") }
+    var percentInput by remember(participant.id, splitMode) { mutableStateOf("") }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(SurfaceLowest)
-            .clickable { onToggle() }
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(16.dp)
     ) {
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Accent bar
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .height(36.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(
-                        if (participant.isIncluded) Secondary
-                        else OutlineVariant.copy(alpha = 0.3f)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.weight(1f).clickable { onToggle() }
+            ) {
+                Box(
+                    modifier = Modifier.width(3.dp).height(36.dp).clip(RoundedCornerShape(2.dp))
+                        .background(if (participant.isIncluded) Secondary else OutlineVariant.copy(alpha = 0.3f))
+                )
+                Box(
+                    modifier = Modifier.size(40.dp).clip(CircleShape).background(Primary.copy(alpha = 0.1f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(participant.name.first().toString(), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Primary)
+                }
+                Column {
+                    Text(participant.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = OnSurface)
+                    Text(
+                        text = when {
+                            !participant.isIncluded -> "Excluded"
+                            splitMode == SplitMode.EQUALLY && participant.share > 0 -> "$${String.format("%.2f", participant.share)}"
+                            else -> "Included"
+                        },
+                        fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                        color = if (participant.isIncluded) Secondary else OutlineVariant
                     )
-            )
-            // Avatar
+                }
+            }
             Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Primary.copy(alpha = 0.1f)),
+                modifier = Modifier.size(24.dp).clip(CircleShape)
+                    .background(if (participant.isIncluded) Primary else Color.Transparent)
+                    .border(2.dp, if (participant.isIncluded) Primary else OutlineVariant, CircleShape)
+                    .clickable { onToggle() },
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = participant.name.first().toString(),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Primary
-                )
-            }
-            Column {
-                Text(
-                    text = participant.name,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = OnSurface
-                )
-                Text(
-                    text = if (participant.isIncluded) "Included" else "Excluded",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = if (participant.isIncluded) Secondary else OutlineVariant
-                )
+                if (participant.isIncluded) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(14.dp))
             }
         }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (participant.isIncluded && participant.share > 0) {
-                Text(
-                    text = "$${String.format("%.2f", participant.share)}",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = OnSurface
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .background(if (participant.isIncluded) Primary else Color.Transparent)
-                    .border(
-                        width = 2.dp,
-                        color = if (participant.isIncluded) Primary else OutlineVariant,
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
+        // Exact or Percent input field
+        if (participant.isIncluded && splitMode != SplitMode.EQUALLY) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp)).background(SurfaceLow).padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (participant.isIncluded) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp)
-                    )
+                Text(
+                    if (splitMode == SplitMode.EXACT) "$" else "%",
+                    fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Primary
+                )
+                BasicTextField(
+                    value = if (splitMode == SplitMode.EXACT) exactInput else percentInput,
+                    onValueChange = {
+                        if (splitMode == SplitMode.EXACT) { exactInput = it; onExactChange(it) }
+                        else { percentInput = it; onPercentChange(it) }
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    textStyle = TextStyle(fontSize = 15.sp, color = OnSurface, fontWeight = FontWeight.SemiBold),
+                    cursorBrush = SolidColor(Primary),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { inner ->
+                        if ((if (splitMode == SplitMode.EXACT) exactInput else percentInput).isEmpty()) {
+                            Text(if (splitMode == SplitMode.EXACT) "0.00" else "0",
+                                fontSize = 15.sp, color = OutlineVariant)
+                        }
+                        inner()
+                    }
+                )
+                if (participant.share > 0 && splitMode == SplitMode.PERCENT) {
+                    Text("= $${String.format("%.2f", participant.share)}", fontSize = 12.sp, color = OnSurfaceVariant)
                 }
             }
         }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -70,8 +71,11 @@ fun CreateGroupScreen(
     val appContacts       by viewModel.appContacts.collectAsStateWithLifecycle()
     val nonAppContacts    by viewModel.nonAppContacts.collectAsStateWithLifecycle()
     val isLoadingContacts by viewModel.isLoadingContacts.collectAsStateWithLifecycle()
+    val isLoading         by viewModel.isLoading.collectAsStateWithLifecycle()
+    val error             by viewModel.error.collectAsStateWithLifecycle()
     val selectedCount     = appContacts.count { it.isSelected }
     var showAllContacts   by remember { mutableStateOf(false) }
+    val nameError         = error == "Group name is required"
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -127,12 +131,17 @@ fun CreateGroupScreen(
                     modifier = Modifier.fillMaxWidth(),
                     decorationBox = { inner ->
                         if (groupName.isEmpty()) Text("e.g. Trip to Paris", fontSize = 26.sp, fontWeight = FontWeight.Bold,
-                            color = OutlineVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                            color = if (nameError) Color(0xFFBA1A1A).copy(alpha = 0.4f) else OutlineVariant,
+                            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                         inner()
                     }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider(color = OutlineVariant.copy(alpha = 0.3f))
+                HorizontalDivider(color = if (nameError) Color(0xFFBA1A1A) else OutlineVariant.copy(alpha = 0.3f))
+                if (nameError) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("Group name is required", fontSize = 12.sp, color = Color(0xFFBA1A1A), fontWeight = FontWeight.Medium)
+                }
             }
 
             Spacer(modifier = Modifier.height(36.dp))
@@ -229,8 +238,12 @@ fun CreateGroupScreen(
                     Icon(Icons.Default.Close, contentDescription = "Close", tint = Primary, modifier = Modifier.size(22.dp))
                 }
                 Text("New Group", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Primary, letterSpacing = (-0.5).sp)
-                TextButton(onClick = { viewModel.createGroup { groupId -> onGroupCreated(groupId) } }) {
-                    Text("Create", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Primary)
+                // Sync contacts button
+                Box(modifier = Modifier.size(40.dp).clip(CircleShape)
+                    .clickable(enabled = !isLoadingContacts) { viewModel.loadContacts(context.contentResolver) },
+                    contentAlignment = Alignment.Center) {
+                    if (isLoadingContacts) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Primary)
+                    else Icon(Icons.Default.Refresh, contentDescription = "Sync contacts", tint = Primary, modifier = Modifier.size(22.dp))
                 }
             }
         }
@@ -241,15 +254,22 @@ fun CreateGroupScreen(
                 modifier = Modifier.fillMaxWidth().height(56.dp)
                     .shadow(12.dp, RoundedCornerShape(50), spotColor = Primary.copy(alpha = 0.3f))
                     .clip(RoundedCornerShape(50))
-                    .background(Brush.linearGradient(listOf(Primary, PrimaryContainer)))
-                    .clickable { viewModel.createGroup { groupId -> onGroupCreated(groupId) } },
+                    .background(Brush.linearGradient(
+                        if (isLoading) listOf(Primary.copy(alpha = 0.6f), PrimaryContainer.copy(alpha = 0.6f))
+                        else listOf(Primary, PrimaryContainer)
+                    ))
+                    .clickable(enabled = !isLoading) { viewModel.createGroup { groupId -> onGroupCreated(groupId) } },
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = if (selectedCount > 0) "Create Group · $selectedCount member${if (selectedCount > 1) "s" else ""}"
-                           else "Create Group",
-                    color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp
-                )
+                if (isLoading) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
+                } else {
+                    Text(
+                        text = if (selectedCount > 0) "Create Group · $selectedCount member${if (selectedCount > 1) "s" else ""}"
+                               else "Create Group",
+                        color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp
+                    )
+                }
             }
         }
     }

@@ -31,6 +31,12 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val _darkMode     = MutableStateFlow(false)
     val darkMode: StateFlow<Boolean> = _darkMode
 
+    private val _isAdmin      = MutableStateFlow(false)
+    val isAdmin: StateFlow<Boolean> = _isAdmin
+
+    private val _kycStatus    = MutableStateFlow("none")
+    val kycStatus: StateFlow<String> = _kycStatus
+
     init { loadProfile() }
 
     private fun loadProfile() {
@@ -40,6 +46,8 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
                     val body = r.body()!!
                     _userName.value  = body.name
                     _userEmail.value = body.email
+                    _isAdmin.value   = body.isAdmin
+                    _kycStatus.value = body.kycStatus ?: "none"
                     tokenManager.userName  = body.name
                     tokenManager.userEmail = body.email
                 }

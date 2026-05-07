@@ -1,6 +1,7 @@
 package com.splitpay
 
 import android.app.Application
+import com.splitpay.data.local.AppCache
 import com.splitpay.data.local.TokenManager
 
 class SplitPayApp : Application() {
@@ -11,6 +12,7 @@ class SplitPayApp : Application() {
         super.onCreate()
         instance = this
         tokenManager = TokenManager(this)
+        AppCache.init(this)
     }
 
     companion object {

@@ -37,6 +37,10 @@ class TokenManager(context: Context) {
         this.userEmail    = email
     }
 
+    var fcmToken: String?
+        get() = prefs.getString(KEY_FCM_TOKEN, null)
+        set(v) = prefs.edit().putString(KEY_FCM_TOKEN, v).apply()
+
     fun clear() = prefs.edit().clear().apply()
 
     companion object {
@@ -45,5 +49,6 @@ class TokenManager(context: Context) {
         private const val KEY_USER_ID    = "user_id"
         private const val KEY_USER_NAME  = "user_name"
         private const val KEY_USER_EMAIL = "user_email"
+        private const val KEY_FCM_TOKEN  = "fcm_token"
     }
 }

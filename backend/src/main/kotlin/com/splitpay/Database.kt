@@ -18,14 +18,17 @@ object Database {
             maximumPoolSize = 10
             minimumIdle     = 2
             connectionTimeout = 30_000
-            idleTimeout       = 600_000
-            maxLifetime       = 1_800_000
+            idleTimeout       = 300_000   // 5 min — retire les connexions inactives avant que PG les ferme
+            maxLifetime       = 600_000   // 10 min — recycle avant le timeout serveur (défaut PG = ~1h mais VPS souvent moins)
+            keepaliveTime     = 60_000    // ping toutes les 60s pour garder les connexions vivantes
+            connectionTestQuery = "SELECT 1"
         }
         val dataSource = HikariDataSource(config)
         Database.connect(dataSource)
         transaction {
             SchemaUtils.createMissingTablesAndColumns(
-                Users, ExpenseGroups, GroupMembers, Expenses, ExpenseParticipants
+                Users, ExpenseGroups, GroupMembers, Expenses, ExpenseParticipants,
+                FcmTokens, AmlAlerts, GdprConfig, KycDocuments
             )
         }
         println(">>> Database connected!")
