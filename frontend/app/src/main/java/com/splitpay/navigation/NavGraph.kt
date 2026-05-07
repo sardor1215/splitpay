@@ -6,6 +6,8 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.splitpay.ui.admin.AdminScreen
+import com.splitpay.ui.kyc.KycScreen
 import com.splitpay.ui.auth.LoginScreen
 import com.splitpay.ui.auth.RegisterScreen
 import com.splitpay.ui.groups.CreateGroupScreen
@@ -15,8 +17,10 @@ import com.splitpay.ui.expense.AddExpenseScreen
 import com.splitpay.ui.group.GroupDetailScreen
 import com.splitpay.ui.profile.ProfileScreen
 import com.splitpay.ui.settlement.SettlementScreen
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import com.splitpay.data.local.AuthEvents
 import com.splitpay.data.local.TokenManager
 
 
@@ -30,6 +34,15 @@ fun NavGraph(navController: NavHostController) {
         Screen.Home.route
     } else {
         Screen.Login.route
+    }
+
+    // Redirect to login when token refresh fails
+    LaunchedEffect(Unit) {
+        AuthEvents.sessionExpired.collect {
+            navController.navigate(Screen.Login.route) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
     }
 
     NavHost(
@@ -164,13 +177,25 @@ fun NavGraph(navController: NavHostController) {
         // ─── Profile ────────────────────────────────────────
         composable(Screen.Profile.route) {
             ProfileScreen(
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack    = { navController.popBackStack() },
+                onNavigateToAdmin = { navController.navigate(Screen.Admin.route) },
+                onNavigateToKyc   = { navController.navigate(Screen.Kyc.route) },
                 onLogout = {
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }
                 }
             )
+        }
+
+        // ─── Admin ───────────────────────────────────────────
+        composable(Screen.Admin.route) {
+            AdminScreen(onNavigateBack = { navController.popBackStack() })
+        }
+
+        // ─── KYC ─────────────────────────────────────────────
+        composable(Screen.Kyc.route) {
+            KycScreen(onNavigateBack = { navController.popBackStack() })
         }
     }
 }

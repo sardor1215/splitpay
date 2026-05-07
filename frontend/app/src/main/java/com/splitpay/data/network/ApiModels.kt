@@ -22,7 +22,9 @@ data class UserProfileResponse(
     val phone: String?,
     val avatarUrl: String?,
     val preferredCurrency: String,
-    val isVerified: Boolean
+    val isVerified: Boolean,
+    val isAdmin: Boolean = false,
+    val kycStatus: String? = null
 )
 
 data class UpdateProfileRequest(
@@ -96,6 +98,99 @@ data class ExpenseResponse(
 )
 
 data class ParticipantResponse(val userId: String, val name: String, val share: Double)
+
+// ── FCM ───────────────────────────────────────────────────────────────
+data class FcmTokenRequest(val token: String)
+
+// ── Admin ─────────────────────────────────────────────────────────────
+data class AdminStatsResponse(
+    val totalUsers: Int,
+    val totalGroups: Int,
+    val totalExpenses: Int,
+    val totalAmount: Double
+)
+
+data class AdminUserResponse(
+    val id: String,
+    val name: String,
+    val email: String,
+    val isVerified: Boolean,
+    val isAdmin: Boolean,
+    val amlStatus: String? = null,
+    val kycStatus: String? = null,
+    val lastActivityAt: String? = null,
+    val createdAt: String
+)
+
+// ── KYC ───────────────────────────────────────────────────────────────────
+data class KycDocumentResponse(
+    val id: String,
+    val docType: String,
+    val status: String,
+    val rejectionReason: String?,
+    val createdAt: String
+)
+
+data class KycStatusResponse(
+    val kycStatus: String,
+    val documents: List<KycDocumentResponse>
+)
+
+data class AdminKycDocResponse(
+    val id: String,
+    val userId: String,
+    val userName: String,
+    val userEmail: String,
+    val docType: String,
+    val status: String,
+    val fileUrl: String,
+    val createdAt: String
+)
+
+data class KycReviewRequest(
+    val status: String,
+    val rejectionReason: String? = null
+)
+
+// ── AML ───────────────────────────────────────────────────────────────────
+data class AmlAlertResponse(
+    val id: String,
+    val userId: String,
+    val userName: String,
+    val alertType: String,
+    val description: String,
+    val amount: Double?,
+    val expenseId: String?,
+    val status: String,
+    val reviewedBy: String?,
+    val reviewedAt: String?,
+    val createdAt: String
+)
+
+data class ReviewAlertRequest(val status: String)
+
+// ── GDPR Config ───────────────────────────────────────────────────────────
+data class GdprConfigResponse(val config: Map<String, String>)
+
+data class GdprConfigUpdateRequest(
+    val archiveAfterMonths: Int? = null,
+    val deleteAfterMonths: Int? = null,
+    val largeTransactionThreshold: Double? = null,
+    val highFrequencyCount: Int? = null,
+    val highFrequencyWindowHours: Int? = null,
+    val newAccountDays: Int? = null,
+    val autoSuspendAfterAlerts: Int? = null
+)
+
+data class AdminGroupResponse(
+    val id: String,
+    val name: String,
+    val emoji: String,
+    val memberCount: Int,
+    val expenseCount: Int,
+    val totalAmount: Double,
+    val createdAt: String
+)
 
 // ── Balances & Settlements ────────────────────────────────────────────────
 data class BalanceResponse(val userId: String, val name: String, val amount: Double)

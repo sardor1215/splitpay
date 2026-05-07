@@ -23,7 +23,11 @@ data class User(
     val googleId: String?,
     val preferredCurrency: String,
     val isDeleted: Boolean,
-    val createdAt: OffsetDateTime
+    val createdAt: OffsetDateTime,
+    val isAdmin: Boolean = false,
+    val lastActivityAt: OffsetDateTime? = null,
+    val amlStatus: String = "clear",
+    val kycStatus: String = "none"
 )
 
 object UserRepository {
@@ -83,6 +87,14 @@ object UserRepository {
         Users.select { Users.phone inList phones }.map { it.toUser() }
     }
 
+    fun findAll(): List<User> = loggedTransaction {
+        Users.select { Users.isDeleted eq false }.orderBy(Users.createdAt, SortOrder.DESC).map { it.toUser() }
+    }
+
+    fun isAdmin(userId: UUID): Boolean = loggedTransaction {
+        Users.select { Users.id eq userId }.singleOrNull()?.get(Users.isAdmin) ?: false
+    }
+
     // ── Auth helpers ──────────────────────────────────────────────────────
     fun verifyPassword(user: User, password: String): Boolean =
         user.passwordHash != null && BCrypt.checkpw(password, user.passwordHash)
@@ -138,6 +150,19 @@ object UserRepository {
         findById(userId)
     }
 
+    // ── Activity + AML ────────────────────────────────────────────────────
+    fun updateLastActivity(userId: UUID) = loggedTransaction {
+        Users.update({ Users.id eq userId }) {
+            it[Users.lastActivityAt] = OffsetDateTime.now()
+        }
+    }
+
+    fun updateAmlStatus(userId: UUID, status: String): Boolean = loggedTransaction {
+        Users.update({ Users.id eq userId }) {
+            it[Users.amlStatus] = status
+        } > 0
+    }
+
     // ── Soft delete ───────────────────────────────────────────────────────
     fun softDelete(userId: UUID): Boolean = loggedTransaction {
         Users.update({ Users.id eq userId }) {
@@ -170,6 +195,10 @@ object UserRepository {
         googleId              = this[Users.googleId],
         preferredCurrency     = this[Users.preferredCurrency],
         isDeleted             = this[Users.isDeleted],
-        createdAt             = this[Users.createdAt]
+        createdAt             = this[Users.createdAt],
+        isAdmin               = this[Users.isAdmin],
+        lastActivityAt        = this[Users.lastActivityAt],
+        amlStatus             = this[Users.amlStatus],
+        kycStatus             = this[Users.kycStatus]
     )
 }

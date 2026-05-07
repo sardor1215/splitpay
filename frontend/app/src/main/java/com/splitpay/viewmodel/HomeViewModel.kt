@@ -31,11 +31,16 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val userName: String
         get() = tokenManager.userName ?: ""
 
-    init { fetchGroups() }
+    init {
+        // Show cached data immediately, then refresh in background
+        AppCache.groups?.let { _groups.value = it }
+        fetchGroups()
+    }
 
     fun fetchGroups() {
         viewModelScope.launch {
-            _isLoading.value = true
+            // Only show spinner if there's nothing to display yet
+            if (_groups.value.isEmpty()) _isLoading.value = true
             _error.value = null
             runCatching { api.getGroups() }
                 .onSuccess { response ->
@@ -52,11 +57,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                                 inviteToken  = g.inviteToken
                             )
                         }
-                        AppCache.groups = groups  // ← met à jour le cache avec la nouvelle liste
+                        AppCache.groups = groups
                         _groups.value = groups
                     }
                 }
-                .onFailure { _error.value = "Cannot reach server" }
+                .onFailure {
+                    if (_groups.value.isEmpty()) _error.value = "Cannot reach server"
+                }
             _isLoading.value = false
         }
     }

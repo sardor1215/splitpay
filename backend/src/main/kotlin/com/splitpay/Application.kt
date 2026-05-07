@@ -1,8 +1,11 @@
 package com.splitpay
 
+import com.splitpay.service.GdprService
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 
 fun main() {
     println(">>> Starting SplitPay backend...")
@@ -25,6 +28,15 @@ fun Application.module() {
     println(">>> configure Routing...")
     configureRouting()       // All routes + CORS + error handling
     println(">>> routing configured")
-    Database.connect() 
+    Database.connect()
     println(">>> module configured")
+
+    // Start background services after DB is connected
+    val appScope = CoroutineScope(SupervisorJob())
+    GdprService.start(appScope)
+
+    // Stop background services gracefully on shutdown
+    monitor.subscribe(ApplicationStopped) {
+        GdprService.stop()
+    }
 }

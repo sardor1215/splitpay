@@ -75,6 +75,70 @@ interface ApiService {
     @DELETE("groups/{groupId}/expenses/{expenseId}")
     suspend fun deleteExpense(@Path("groupId") groupId: String, @Path("expenseId") expenseId: String): Response<MessageResponse>
 
+    // ── FCM ───────────────────────────────────────────────────────────────
+    @POST("users/fcm-token")
+    suspend fun registerFcmToken(@Body body: FcmTokenRequest): Response<MessageResponse>
+
+    // ── Admin ─────────────────────────────────────────────────────────────
+    @GET("admin/stats")
+    suspend fun getAdminStats(): Response<AdminStatsResponse>
+
+    @GET("admin/users")
+    suspend fun getAdminUsers(): Response<List<AdminUserResponse>>
+
+    @GET("admin/groups")
+    suspend fun getAdminGroups(): Response<List<AdminGroupResponse>>
+
+    // ── AML ───────────────────────────────────────────────────────────────
+    @GET("admin/aml/alerts")
+    suspend fun getAmlAlerts(@Query("status") status: String? = null): Response<List<AmlAlertResponse>>
+
+    @PATCH("admin/aml/alerts/{alertId}")
+    suspend fun reviewAmlAlert(@Path("alertId") alertId: String, @Body body: ReviewAlertRequest): Response<MessageResponse>
+
+    @PATCH("admin/users/{userId}/aml-status")
+    suspend fun updateUserAmlStatus(@Path("userId") userId: String, @Body body: ReviewAlertRequest): Response<MessageResponse>
+
+    // ── GDPR Config ───────────────────────────────────────────────────────
+    @GET("admin/gdpr/config")
+    suspend fun getGdprConfig(): Response<GdprConfigResponse>
+
+    @PUT("admin/gdpr/config")
+    suspend fun updateGdprConfig(@Body body: GdprConfigUpdateRequest): Response<MessageResponse>
+
+    @POST("admin/gdpr/run-cleanup")
+    suspend fun runGdprCleanup(): Response<MessageResponse>
+
+    @POST("admin/users/{userId}/lift-suspension")
+    suspend fun liftSuspension(@Path("userId") userId: String): Response<MessageResponse>
+
+    // ── KYC (user) ────────────────────────────────────────────────────────
+    @Multipart
+    @POST("kyc/documents")
+    suspend fun uploadKycDocument(
+        @Part("docType") docType: okhttp3.RequestBody,
+        @Part file: okhttp3.MultipartBody.Part
+    ): Response<KycDocumentResponse>
+
+    @GET("kyc/status")
+    suspend fun getKycStatus(): Response<KycStatusResponse>
+
+    @POST("kyc/submit")
+    suspend fun submitKycForReview(): Response<MessageResponse>
+
+    // ── KYC (admin) ───────────────────────────────────────────────────────
+    @GET("admin/kyc/pending")
+    suspend fun getKycPending(): Response<List<AdminKycDocResponse>>
+
+    @PATCH("admin/kyc/documents/{docId}")
+    suspend fun reviewKycDocument(
+        @Path("docId") docId: String,
+        @Body body: KycReviewRequest
+    ): Response<MessageResponse>
+
+    @POST("admin/kyc/users/{userId}/approve-all")
+    suspend fun approveAllKycForUser(@Path("userId") userId: String): Response<MessageResponse>
+
     // ── Balances & Settlements ────────────────────────────────────────────
     @GET("groups/{groupId}/balances")
     suspend fun getBalances(@Path("groupId") groupId: String): Response<List<BalanceResponse>>

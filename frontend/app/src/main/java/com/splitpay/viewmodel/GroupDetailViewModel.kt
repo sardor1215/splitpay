@@ -9,6 +9,7 @@ import com.splitpay.SplitPayApp
 import com.splitpay.data.local.AppCache
 import com.splitpay.data.model.Expense
 import com.splitpay.data.model.Group
+import com.splitpay.data.model.Member
 import com.splitpay.data.network.AddMemberRequest
 import com.splitpay.data.network.LookupRequest
 import com.splitpay.data.network.ParticipantRequest
@@ -88,10 +89,24 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadGroup(groupId: String) {
         viewModelScope.launch {
-            _isLoading.value = true
-            _error.value = null
-
             val userId = tokenManager.userId
+
+            // Show cached data immediately
+            AppCache.groups?.find { it.id == groupId }?.let { _group.value = it }
+            AppCache.groupMembers[groupId]?.let { cached ->
+                _members.value = cached.map { GroupMember(it.userId, it.name, it.role) }
+                _isAdmin.value = cached.find { it.userId == userId }?.role == "admin"
+                _group.value = _group.value?.copy(members = cached.map { it.name })
+            }
+            AppCache.expensesByGroup[groupId]?.let { cached ->
+                _expenses.value = cached
+                _totalSpending.value = cached.sumOf { it.amount }
+            }
+
+            // Only show spinner if nothing cached
+            val hasCachedData = _expenses.value.isNotEmpty() || _members.value.isNotEmpty()
+            _isLoading.value = !hasCachedData
+            _error.value = null
 
             val groupDef       = async { runCatching { api.getGroup(groupId) } }
             val membersDef     = async { runCatching { api.getMembers(groupId) } }
@@ -119,6 +134,7 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
                     _group.value = _group.value?.copy(members = list.map { it.name })
                     _members.value = list.map { GroupMember(it.userId, it.name, it.role) }
                     _isAdmin.value = list.find { it.userId == userId }?.role == "admin"
+                    AppCache.groupMembers[groupId] = list.map { Member(it.userId, it.name, it.role) }
                 }
             }
 
@@ -144,6 +160,7 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     _expenses.value = expenses
                     _totalSpending.value = expenses.sumOf { it.amount }
+                    AppCache.expensesByGroup[groupId] = expenses
                 }
             }
 
@@ -234,7 +251,7 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
                 if (r.isSuccessful) {
                     _members.value = _members.value + GroupMember(userId, userName, "member")
                     _group.value = _group.value?.copy(members = _members.value.map { it.name })
-                    // Remove from addable list
+                    AppCache.groupMembers[groupId] = _members.value.map { Member(it.userId, it.name, it.role) }
                     _addableContacts.value = _addableContacts.value.filter { it.userId != userId }
                     onSuccess()
                 } else {
@@ -252,7 +269,7 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
             }.onSuccess { r ->
                 if (r.isSuccessful) {
                     _group.value = _group.value?.copy(name = newName.trim(), emoji = newEmoji)
-                    AppCache.groups = null
+                    AppCache.groups = AppCache.groups?.map { if (it.id == groupId) it.copy(name = newName.trim(), emoji = newEmoji) else it }
                     onSuccess()
                 } else {
                     _error.value = "Failed to update group"
@@ -269,6 +286,7 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
                 if (r.isSuccessful) {
                     _members.value = _members.value.filter { it.userId != userId }
                     _group.value = _group.value?.copy(members = _members.value.map { it.name })
+                    AppCache.groupMembers[groupId] = _members.value.map { Member(it.userId, it.name, it.role) }
                     onSuccess()
                 } else {
                     _error.value = "Failed to remove member"
@@ -333,7 +351,7 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
                         ) else e
                     }
                     _totalSpending.value = _expenses.value.sumOf { it.amount }
-                    AppCache.expensesByGroup.remove(groupId)
+                    AppCache.expensesByGroup[groupId] = _expenses.value
                     onSuccess()
                 } else {
                     _error.value = "Failed to update expense"
@@ -349,7 +367,7 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
                     if (r.isSuccessful) {
                         _expenses.value = _expenses.value.filter { it.id != expenseId }
                         _totalSpending.value = _expenses.value.sumOf { it.amount }
-                        AppCache.expensesByGroup.remove(groupId)
+                        AppCache.expensesByGroup[groupId] = _expenses.value
                         onSuccess()
                     } else {
                         _error.value = "Failed to delete expense"

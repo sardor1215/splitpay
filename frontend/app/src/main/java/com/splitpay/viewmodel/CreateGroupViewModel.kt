@@ -7,6 +7,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.splitpay.SplitPayApp
 import com.splitpay.data.local.AppCache
+import com.splitpay.data.model.Expense
+import com.splitpay.data.model.Group
+import com.splitpay.data.model.Member
 import com.splitpay.data.network.AddMemberRequest
 import com.splitpay.data.network.CreateGroupRequest
 import com.splitpay.data.network.LookupRequest
@@ -33,7 +36,9 @@ data class DeviceContact(
 class CreateGroupViewModel(app: Application) : AndroidViewModel(app) {
 
     private val api = RetrofitClient.api
-    private val currentUserId = (app as SplitPayApp).tokenManager.userId
+    private val tokenManager = (app as SplitPayApp).tokenManager
+    private val currentUserId = tokenManager.userId
+    private val currentUserName = tokenManager.userName ?: ""
 
     private val _groupName = MutableStateFlow("")
     val groupName: StateFlow<String> = _groupName
@@ -139,12 +144,30 @@ class CreateGroupViewModel(app: Application) : AndroidViewModel(app) {
                 api.createGroup(CreateGroupRequest(_groupName.value.trim(), _selectedEmoji.value))
             }.onSuccess { response ->
                 if (response.isSuccessful) {
-                    val groupId = response.body()!!.id
-                    AppCache.groups = null
-                    _appContacts.value.filter { it.isSelected }.forEach { contact ->
-                        runCatching { api.addMember(groupId, AddMemberRequest(contact.userId)) }
+                    val created = response.body()!!
+                    val newGroup = Group(
+                        id           = created.id,
+                        name         = created.name,
+                        emoji        = created.emoji,
+                        members      = emptyList(),
+                        balance      = 0.0,
+                        lastActivity = "",
+                        isArchived   = false,
+                        inviteToken  = created.inviteToken
+                    )
+                    AppCache.groups = listOf(newGroup) + (AppCache.groups ?: emptyList())
+
+                    // Pre-populate cache so GroupDetail shows instantly without spinner
+                    val selectedContacts = _appContacts.value.filter { it.isSelected }
+                    val members = mutableListOf(Member(currentUserId ?: "", currentUserName, "admin")) +
+                        selectedContacts.map { Member(it.userId, it.name, "member") }
+                    AppCache.groupMembers[created.id] = members
+                    AppCache.expensesByGroup[created.id] = emptyList()
+
+                    selectedContacts.forEach { contact ->
+                        runCatching { api.addMember(created.id, AddMemberRequest(contact.userId)) }
                     }
-                    onSuccess(groupId)
+                    onSuccess(created.id)
                 } else {
                     _error.value = "Error ${response.code()}"
                 }

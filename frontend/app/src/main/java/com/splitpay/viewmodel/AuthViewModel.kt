@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.splitpay.SplitPayApp
 import com.splitpay.data.local.AppCache
+import com.splitpay.data.network.FcmTokenRequest
 import com.splitpay.data.network.LoginRequest
 import com.splitpay.data.network.RegisterRequest
 import com.splitpay.data.network.RetrofitClient
@@ -40,6 +41,10 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                         val body = response.body()!!
                         tokenManager.save(body.accessToken, body.refreshToken, body.userId, body.name, body.email)
                         AppCache.clearAll()
+                        // Register FCM token if available
+                        tokenManager.fcmToken?.let { fcmToken ->
+                            runCatching { api.registerFcmToken(FcmTokenRequest(fcmToken)) }
+                        }
                         _uiState.value = AuthUiState.Success
                     } else {
                         _uiState.value = AuthUiState.Error(

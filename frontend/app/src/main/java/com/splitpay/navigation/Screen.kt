@@ -32,4 +32,10 @@ sealed class Screen(val route: String) {
 
     // Profil
     data object Profile : Screen("profile")
+
+    // Admin
+    data object Admin : Screen("admin")
+
+    // KYC
+    data object Kyc : Screen("kyc")
 }

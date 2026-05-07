@@ -3,6 +3,7 @@ package com.splitpay.routes
 import com.splitpay.auth.EmailService
 import com.splitpay.auth.JwtService
 import com.splitpay.repository.UserRepository
+import com.splitpay.service.GdprService
 import com.splitpay.services.ExportService
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -18,6 +19,7 @@ import java.util.UUID
 // ── Request models ─────────────────────────────────────────────────────────
 @Serializable data class LookupRequest(val phones: List<String>)
 @Serializable data class LookupUserResponse(val userId: String, val name: String, val phone: String, val email: String)
+@Serializable data class FcmTokenRegisterRequest(val token: String)
 
 @Serializable data class RegisterRequest(
     val name: String,
@@ -71,7 +73,9 @@ import java.util.UUID
     val phone: String? = null,
     val avatarUrl: String? = null,
     val preferredCurrency: String,
-    val isVerified: Boolean
+    val isVerified: Boolean,
+    val isAdmin: Boolean = false,
+    val kycStatus: String = "none"
 )
 
 @Serializable data class MessageResponse(val message: String)
@@ -290,6 +294,14 @@ fun Route.authRoutes() {
             val users = UserRepository.findByPhones(body.phones)
             call.respond(users.map { LookupUserResponse(it.id.toString(), it.name, it.phone ?: "", it.email) })
         }
+
+        // POST /users/fcm-token — register or refresh FCM push token
+        post("/users/fcm-token") {
+            val userId = call.currentUserId()
+            val body   = call.receive<FcmTokenRegisterRequest>()
+            com.splitpay.service.FcmService.upsertToken(userId, body.token)
+            call.respond(HttpStatusCode.OK, MessageResponse("FCM token registered"))
+        }
     }
 }
 
@@ -329,5 +341,7 @@ private fun com.splitpay.repository.User.toProfileResponse() = UserProfileRespon
     phone             = phone,
     avatarUrl         = avatarUrl,
     preferredCurrency = preferredCurrency,
-    isVerified        = isVerified
+    isVerified        = isVerified,
+    isAdmin           = isAdmin,
+    kycStatus         = kycStatus
 )

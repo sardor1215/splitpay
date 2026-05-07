@@ -65,6 +65,9 @@ dependencies {
 
     implementation("io.ktor:ktor-server-status-pages:$ktor_version")
     implementation("io.ktor:ktor-server-cors:$ktor_version")
+
+    // Google Auth (FCM v1 API)
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.23.0")
 }
 
 tasks.withType<KotlinCompile> {

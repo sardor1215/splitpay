@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.ChevronRight
@@ -51,6 +52,8 @@ private val OutlineVariant   = Color(0xFFBEC8C9)
 @Composable
 fun ProfileScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToAdmin: () -> Unit = {},
+    onNavigateToKyc: () -> Unit = {},
     onLogout: () -> Unit,
     viewModel: ProfileViewModel = viewModel()
 ) {
@@ -59,6 +62,8 @@ fun ProfileScreen(
     val totalBalance by viewModel.totalBalance.collectAsStateWithLifecycle()
     val groupCount   by viewModel.groupCount.collectAsStateWithLifecycle()
     val darkMode     by viewModel.darkMode.collectAsStateWithLifecycle()
+    val isAdmin      by viewModel.isAdmin.collectAsStateWithLifecycle()
+    val kycStatus    by viewModel.kycStatus.collectAsStateWithLifecycle()
 
     val initials = userName.split(" ")
         .mapNotNull { it.firstOrNull()?.toString() }
@@ -237,6 +242,57 @@ fun ProfileScreen(
                 }
             )
 
+            // ── Identity Verification (KYC) ──────────────────────────────
+            Spacer(modifier = Modifier.height(32.dp))
+            SectionHeader(title = "IDENTITY VERIFICATION")
+            Spacer(modifier = Modifier.height(12.dp))
+            val (kycIcon, kycSubtitle, kycColor) = when (kycStatus) {
+                "approved" -> Triple(Icons.Default.Lock, "Verified — all features unlocked", Secondary)
+                "pending"  -> Triple(Icons.Default.Lock, "Under review", Color(0xFFB45309))
+                "rejected" -> Triple(Icons.Default.Lock, "Action required — re-upload documents", Tertiary)
+                else       -> Triple(Icons.Default.Lock, "Not verified — tap to upload documents", Primary)
+            }
+            SettingsItem(
+                icon = kycIcon,
+                title = "KYC Verification",
+                subtitle = kycSubtitle,
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (kycStatus != "approved") {
+                            Box(
+                                modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                                    .background(kycColor.copy(alpha = 0.12f))
+                                    .padding(horizontal = 7.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = kycStatus.replaceFirstChar { it.uppercase() },
+                                    fontSize = 10.sp, fontWeight = FontWeight.Bold, color = kycColor
+                                )
+                            }
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = OutlineVariant, modifier = Modifier.size(20.dp))
+                    }
+                },
+                onClick = onNavigateToKyc
+            )
+
+            // ── Admin ─────────────────────────────────────────────────────
+            if (isAdmin) {
+                Spacer(modifier = Modifier.height(32.dp))
+                SectionHeader(title = "ADMINISTRATION")
+                Spacer(modifier = Modifier.height(12.dp))
+                SettingsItem(
+                    icon = Icons.Default.AdminPanelSettings,
+                    title = "Admin Dashboard",
+                    subtitle = "Users, groups and app statistics",
+                    trailingContent = {
+                        Icon(Icons.Default.ChevronRight, contentDescription = null,
+                            tint = OutlineVariant, modifier = Modifier.size(20.dp))
+                    },
+                    onClick = onNavigateToAdmin
+                )
+            }
+
             Spacer(modifier = Modifier.height(40.dp))
 
             // ── Logout ────────────────────────────────────────────────────
@@ -368,14 +424,15 @@ private fun SettingsItem(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    trailingContent: @Composable () -> Unit
+    trailingContent: @Composable () -> Unit,
+    onClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(SurfaceLowest)
-            .clickable { }
+            .clickable { onClick() }
             .padding(16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically

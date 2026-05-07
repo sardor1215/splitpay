@@ -1,6 +1,7 @@
 package com.splitpay.data.network
 
 import com.splitpay.SplitPayApp
+import com.splitpay.data.local.AuthEvents
 import okhttp3.Authenticator
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -13,7 +14,8 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
 
-    private const val BASE_URL = "http://10.0.2.2:8080/"
+    //private const val BASE_URL = "http://10.0.2.2:8080/"
+    private const val BASE_URL = "http://172.20.34.95:8080/"
 
     private val authInterceptor = Interceptor { chain ->
         val token = SplitPayApp.instance.tokenManager.accessToken
@@ -50,6 +52,7 @@ object RetrofitClient {
 
             if (!refreshResponse.isSuccessful) {
                 tokenManager.clear()
+                AuthEvents.notifyExpired()   // redirect to login
                 return null
             }
 
@@ -73,7 +76,13 @@ object RetrofitClient {
         .addInterceptor(authInterceptor)
         .addInterceptor(logging)
         .authenticator(tokenAuthenticator)
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
         .build()
+
+    val baseUrl: String get() = BASE_URL
+    val httpClient: OkHttpClient get() = client
 
     val api: ApiService by lazy {
         Retrofit.Builder()

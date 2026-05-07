@@ -2,6 +2,10 @@ package com.splitpay.routes
 
 import com.splitpay.repository.Expense
 import com.splitpay.repository.ExpenseRepository
+import com.splitpay.repository.GroupRepository
+import com.splitpay.repository.UserRepository
+import com.splitpay.service.AmlService
+import com.splitpay.service.FcmService
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
@@ -118,6 +122,21 @@ fun Route.expenseRoutes() {
 
                 val expense = ExpenseRepository.create(groupId, body.title, total, paidBy, body.splitMode, body.category, participants)
                 call.respond(HttpStatusCode.Created, expense.toResponse())
+
+                if (body.category != "settlement") {
+                    val memberIds = GroupRepository.getMembers(groupId).map { it.userId }
+                    FcmService.notifyGroupMembers(
+                        groupId      = groupId,
+                        excludeUserId = paidBy,
+                        memberIds    = memberIds,
+                        title        = "New expense",
+                        body         = "${expense.paidByName} added \"${expense.title}\" — ${"%.2f".format(expense.amount.toDouble())}"
+                    )
+                    // AML monitoring (fire-and-forget, don't block response)
+                    runCatching {
+                        AmlService.checkExpense(expense.id, paidBy, total, groupId)
+                    }
+                }
             }
 
             // GET — list expenses for group
@@ -172,6 +191,12 @@ fun Route.expenseRoutes() {
                     val updated = ExpenseRepository.update(expenseId, body.title, total, paidBy, body.splitMode, body.category, participants)
                         ?: return@patch call.respond(HttpStatusCode.NotFound, MessageResponse("Expense not found"))
                     call.respond(updated.toResponse())
+                    val editor = call.currentUserId()
+                    val memberIds = GroupRepository.getMembers(groupId).map { it.userId }
+                    runCatching {
+                        FcmService.notifyGroupMembers(groupId, editor, memberIds,
+                            "Expense updated", "\"${body.title}\" was edited")
+                    }
                 }
 
                 // DELETE — delete expense
@@ -180,9 +205,20 @@ fun Route.expenseRoutes() {
                         ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
                         ?: return@delete call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid expense ID"))
 
+                    val expense = ExpenseRepository.findById(expenseId)
                     val deleted = ExpenseRepository.delete(expenseId)
-                    if (deleted) call.respond(HttpStatusCode.OK, MessageResponse("Expense deleted"))
-                    else call.respond(HttpStatusCode.NotFound, MessageResponse("Expense not found"))
+                    if (deleted) {
+                        call.respond(HttpStatusCode.OK, MessageResponse("Expense deleted"))
+                        val groupId2 = call.parameters["groupId"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+                        if (groupId2 != null && expense != null) {
+                            val editor = call.currentUserId()
+                            val memberIds = GroupRepository.getMembers(groupId2).map { it.userId }
+                            runCatching {
+                                FcmService.notifyGroupMembers(groupId2, editor, memberIds,
+                                    "Expense deleted", "\"${expense.title}\" was removed")
+                            }
+                        }
+                    } else call.respond(HttpStatusCode.NotFound, MessageResponse("Expense not found"))
                 }
             }
         }
