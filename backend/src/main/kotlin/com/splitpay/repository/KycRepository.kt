@@ -43,19 +43,19 @@ object KycRepository {
 
     // Called explicitly when user taps "Submit for Review"
     fun submitForReview(userId: UUID): Boolean = transaction {
-        val uploadedTypes = KycDocuments
-            .select { (KycDocuments.userId eq userId) and (KycDocuments.status eq "uploaded") }
-            .map { it[KycDocuments.docType] }
-            .toSet()
+        // A doc is "ready" if approved (already reviewed) or freshly uploaded
+        val docStatusByType = KycDocuments
+            .select { KycDocuments.userId eq userId }
+            .associate { it[KycDocuments.docType] to it[KycDocuments.status] }
 
-        if (!uploadedTypes.containsAll(REQUIRED_DOC_TYPES)) return@transaction false
+        val allReady = REQUIRED_DOC_TYPES.all { docStatusByType[it] in listOf("uploaded", "approved") }
+        if (!allReady) return@transaction false
 
-        // Mark all uploaded docs as pending
+        // Only move freshly uploaded docs to pending — leave approved ones untouched
         KycDocuments.update({
             (KycDocuments.userId eq userId) and (KycDocuments.status eq "uploaded")
         }) { it[KycDocuments.status] = "pending" }
 
-        // Set user kycStatus to pending
         Users.update({ Users.id eq userId }) { it[Users.kycStatus] = "pending" }
         true
     }
@@ -87,7 +87,16 @@ object KycRepository {
             it[KycDocuments.reviewedAt] = now
         }
         if (updated > 0) {
-            Users.update({ Users.id eq userId }) { it[Users.kycStatus] = "approved" }
+            // Re-check ALL docs — a rejected doc must block approval
+            val statuses = KycDocuments.select { KycDocuments.userId eq userId }
+                .map { it[KycDocuments.status] }
+            val newKycStatus = when {
+                statuses.any { it == "rejected" }                           -> "rejected"
+                statuses.all { it == "approved" } && statuses.isNotEmpty()  -> "approved"
+                statuses.any { it == "pending" }                            -> "pending"
+                else                                                        -> "none"
+            }
+            Users.update({ Users.id eq userId }) { it[Users.kycStatus] = newKycStatus }
         }
         updated > 0
     }

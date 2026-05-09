@@ -47,11 +47,14 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         _uiState.value = AuthUiState.Success
                     } else {
+                        val serverMsg = runCatching {
+                            org.json.JSONObject(response.errorBody()?.string() ?: "").getString("message")
+                        }.getOrNull()
                         _uiState.value = AuthUiState.Error(
-                            when (response.code()) {
-                                401  -> "Incorrect email or password"
-                                403  -> "Please verify your email"
-                                else -> "Error ${response.code()}"
+                            when {
+                                response.code() == 401 -> "Incorrect email or password"
+                                serverMsg != null       -> serverMsg
+                                else                   -> "Error ${response.code()}"
                             }
                         )
                     }

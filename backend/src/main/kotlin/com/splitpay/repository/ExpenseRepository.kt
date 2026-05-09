@@ -1,6 +1,7 @@
 package com.splitpay.repository
 
 import com.splitpay.database.loggedTransaction
+import com.splitpay.database.tables.ExpenseActivities
 import com.splitpay.database.tables.ExpenseParticipants
 import com.splitpay.database.tables.Expenses
 import com.splitpay.database.tables.Users
@@ -45,6 +46,15 @@ data class Settlement(
     val amount: BigDecimal
 )
 
+data class ExpenseActivity(
+    val id: UUID,
+    val userId: UUID,
+    val userName: String,
+    val action: String,
+    val details: String?,
+    val createdAt: OffsetDateTime
+)
+
 object ExpenseRepository {
 
     fun create(
@@ -54,7 +64,8 @@ object ExpenseRepository {
         paidBy: UUID,
         splitMode: String,
         category: String = "other",
-        participants: List<Pair<UUID, BigDecimal>>
+        participants: List<Pair<UUID, BigDecimal>>,
+        actorId: UUID? = null
     ): Expense = loggedTransaction {
         val now = OffsetDateTime.now()
         val expenseId = Expenses.insert {
@@ -75,6 +86,13 @@ object ExpenseRepository {
             }
         }
 
+        // Log activity
+        val actor  = actorId ?: paidBy
+        val paidByName = userName(paidBy)
+        val nParticipants = participants.size
+        logActivity(expenseId, actor, "created",
+            "Added \"$title\" — $${"%.2f".format(amount)} paid by $paidByName, split $splitMode between $nParticipants participant(s)")
+
         findById(expenseId)!!
     }
 
@@ -85,8 +103,10 @@ object ExpenseRepository {
         paidBy: UUID,
         splitMode: String,
         category: String,
-        participants: List<Pair<UUID, BigDecimal>>
+        participants: List<Pair<UUID, BigDecimal>>,
+        actorId: UUID? = null
     ): Expense? = loggedTransaction {
+        val previous = findById(expenseId)
         val updated = Expenses.update({ Expenses.id eq expenseId }) {
             it[Expenses.title]     = title
             it[Expenses.amount]    = amount
@@ -105,6 +125,18 @@ object ExpenseRepository {
                 it[ExpenseParticipants.share]     = share
             }
         }
+
+        // Build change details
+        val changes = mutableListOf<String>()
+        if (previous != null) {
+            if (previous.title  != title)    changes.add("title: \"${previous.title}\" → \"$title\"")
+            if (previous.amount != amount)   changes.add("amount: ${"%.2f".format(previous.amount)} → ${"%.2f".format(amount)}")
+            if (previous.paidBy != paidBy)   changes.add("paid by: ${previous.paidByName} → ${userName(paidBy)}")
+            if (previous.splitMode != splitMode) changes.add("split: ${previous.splitMode} → $splitMode")
+        }
+        val details = if (changes.isEmpty()) "Updated expense" else changes.joinToString(", ")
+        logActivity(expenseId, actorId ?: paidBy, "updated", details)
+
         findById(expenseId)
     }
 
@@ -200,6 +232,32 @@ object ExpenseRepository {
         }
 
         return settlements
+    }
+
+    fun getActivities(expenseId: UUID): List<ExpenseActivity> = loggedTransaction {
+        (ExpenseActivities innerJoin Users)
+            .select { ExpenseActivities.expenseId eq expenseId }
+            .orderBy(ExpenseActivities.createdAt, SortOrder.ASC)
+            .map {
+                ExpenseActivity(
+                    id        = it[ExpenseActivities.id],
+                    userId    = it[ExpenseActivities.userId],
+                    userName  = it[Users.name],
+                    action    = it[ExpenseActivities.action],
+                    details   = it[ExpenseActivities.details],
+                    createdAt = it[ExpenseActivities.createdAt]
+                )
+            }
+    }
+
+    private fun logActivity(expenseId: UUID, userId: UUID, action: String, details: String?) {
+        ExpenseActivities.insert {
+            it[ExpenseActivities.expenseId] = expenseId
+            it[ExpenseActivities.userId]    = userId
+            it[ExpenseActivities.action]    = action
+            it[ExpenseActivities.details]   = details
+            it[ExpenseActivities.createdAt] = OffsetDateTime.now()
+        }
     }
 
     private fun loadParticipants(expenseId: UUID): List<ExpenseShare> =

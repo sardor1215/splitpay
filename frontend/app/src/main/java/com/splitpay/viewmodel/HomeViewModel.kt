@@ -19,6 +19,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val _groups = MutableStateFlow<List<Group>>(emptyList())
     val groups: StateFlow<List<Group>> = _groups
 
+    private val _accountBalance = MutableStateFlow(0.0)
+    val accountBalance: StateFlow<Double> = _accountBalance
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
 
@@ -32,38 +35,44 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         get() = tokenManager.userName ?: ""
 
     init {
-        // Show cached data immediately, then refresh in background
         AppCache.groups?.let { _groups.value = it }
         fetchGroups()
     }
 
     fun fetchGroups() {
         viewModelScope.launch {
-            // Only show spinner if there's nothing to display yet
             if (_groups.value.isEmpty()) _isLoading.value = true
             _error.value = null
-            runCatching { api.getGroups() }
-                .onSuccess { response ->
-                    if (response.isSuccessful) {
-                        val groups = response.body().orEmpty().map { g ->
-                            Group(
-                                id           = g.id,
-                                name         = g.name,
-                                emoji        = g.emoji,
-                                members      = List(g.memberCount) { "" },
-                                balance      = g.userBalance,
-                                lastActivity = g.lastActivityAt,
-                                isArchived   = g.isArchived,
-                                inviteToken  = g.inviteToken
-                            )
-                        }
-                        AppCache.groups = groups
-                        _groups.value = groups
+
+            // Fetch groups and account balance in parallel
+            val groupsResult  = runCatching { api.getGroups() }
+            val profileResult = runCatching { api.getProfile() }
+
+            groupsResult.onSuccess { response ->
+                if (response.isSuccessful) {
+                    val groups = response.body().orEmpty().map { g ->
+                        Group(
+                            id           = g.id,
+                            name         = g.name,
+                            emoji        = g.emoji,
+                            members      = List(g.memberCount) { "" },
+                            balance      = g.userBalance,
+                            lastActivity = g.lastActivityAt,
+                            isArchived   = g.isArchived,
+                            inviteToken  = g.inviteToken
+                        )
                     }
+                    AppCache.groups = groups
+                    _groups.value = groups
                 }
-                .onFailure {
-                    if (_groups.value.isEmpty()) _error.value = "Cannot reach server"
-                }
+            }.onFailure {
+                if (_groups.value.isEmpty()) _error.value = "Cannot reach server"
+            }
+
+            profileResult.onSuccess { r ->
+                if (r.isSuccessful) _accountBalance.value = r.body()?.accountBalance ?: 0.0
+            }
+
             _isLoading.value = false
         }
     }

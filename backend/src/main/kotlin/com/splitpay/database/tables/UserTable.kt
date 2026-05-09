@@ -24,6 +24,7 @@ object Users : Table("users") {
     val lastActivityAt        = timestampWithTimeZone("last_activity_at").nullable()
     val amlStatus             = varchar("aml_status", 20).default("clear")   // clear | flagged | suspended
     val kycStatus             = varchar("kyc_status", 20).default("none")    // none | pending | approved | rejected
+    val accountBalance        = decimal("account_balance", 12, 2).default(java.math.BigDecimal.ZERO)
 
     override val primaryKey = PrimaryKey(id)
 }

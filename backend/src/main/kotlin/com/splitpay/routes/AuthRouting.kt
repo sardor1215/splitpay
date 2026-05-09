@@ -75,7 +75,8 @@ import java.util.UUID
     val preferredCurrency: String,
     val isVerified: Boolean,
     val isAdmin: Boolean = false,
-    val kycStatus: String = "none"
+    val kycStatus: String = "none",
+    val accountBalance: Double = 0.0
 )
 
 @Serializable data class MessageResponse(val message: String)
@@ -120,6 +121,9 @@ fun Route.authRoutes() {
             if (!user.isVerified)
                 return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Please verify your email first"))
 
+            if (user.amlStatus == "suspended")
+                return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Your account has been suspended due to suspicious activity. Please contact support."))
+
             val accessToken  = JwtService.generateAccessToken(user.id, user.email)
             val refreshToken = JwtService.generateRefreshToken(user.id)
             UserRepository.updateRefreshToken(user.id, refreshToken)
@@ -139,6 +143,9 @@ fun Route.authRoutes() {
             // Validate stored token matches (rotation check)
             if (user.refreshToken != body.refreshToken)
                 return@post call.respond(HttpStatusCode.Unauthorized, MessageResponse("Refresh token has been revoked"))
+
+            if (user.amlStatus == "suspended")
+                return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Your account has been suspended due to suspicious activity. Please contact support."))
 
             val newAccess  = JwtService.generateAccessToken(user.id, user.email)
             val newRefresh = JwtService.generateRefreshToken(user.id)
@@ -343,5 +350,6 @@ private fun com.splitpay.repository.User.toProfileResponse() = UserProfileRespon
     preferredCurrency = preferredCurrency,
     isVerified        = isVerified,
     isAdmin           = isAdmin,
-    kycStatus         = kycStatus
+    kycStatus         = kycStatus,
+    accountBalance    = accountBalance.toDouble()
 )

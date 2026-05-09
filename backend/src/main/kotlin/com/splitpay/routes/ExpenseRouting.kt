@@ -60,6 +60,20 @@ import java.util.UUID
     val share: Double
 )
 
+@Serializable data class ExpenseActivityResponse(
+    val id: String,
+    val userId: String,
+    val userName: String,
+    val action: String,
+    val details: String?,
+    val createdAt: String
+)
+
+@Serializable data class ExpenseDetailResponse(
+    val expense: ExpenseResponse,
+    val activities: List<ExpenseActivityResponse>
+)
+
 @Serializable data class BalanceResponse(
     val userId: String,
     val name: String,
@@ -120,7 +134,18 @@ fun Route.expenseRoutes() {
                     else -> return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("splitMode must be equally, exact, or percentage"))
                 }
 
-                val expense = ExpenseRepository.create(groupId, body.title, total, paidBy, body.splitMode, body.category, participants)
+                // AML pre-check — block before creating the expense
+                if (body.category != "settlement") {
+                    val violation = AmlService.preCheck(paidBy, total, groupId)
+                    if (violation != null) {
+                        return@post call.respond(
+                            HttpStatusCode.UnprocessableEntity,
+                            MessageResponse("Expense blocked by compliance rules: $violation")
+                        )
+                    }
+                }
+
+                val expense = ExpenseRepository.create(groupId, body.title, total, paidBy, body.splitMode, body.category, participants, actorId = call.currentUserId())
                 call.respond(HttpStatusCode.Created, expense.toResponse())
 
                 if (body.category != "settlement") {
@@ -150,6 +175,31 @@ fun Route.expenseRoutes() {
             }
 
             route("/{expenseId}") {
+
+                // GET — single expense detail with activities
+                get {
+                    val expenseId = call.parameters["expenseId"]
+                        ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+                        ?: return@get call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid expense ID"))
+
+                    val expense = ExpenseRepository.findById(expenseId)
+                        ?: return@get call.respond(HttpStatusCode.NotFound, MessageResponse("Expense not found"))
+                    val activities = ExpenseRepository.getActivities(expenseId)
+
+                    call.respond(ExpenseDetailResponse(
+                        expense    = expense.toResponse(),
+                        activities = activities.map {
+                            ExpenseActivityResponse(
+                                id        = it.id.toString(),
+                                userId    = it.userId.toString(),
+                                userName  = it.userName,
+                                action    = it.action,
+                                details   = it.details,
+                                createdAt = it.createdAt.toString()
+                            )
+                        }
+                    ))
+                }
 
                 // PATCH — update expense
                 patch {
@@ -188,7 +238,7 @@ fun Route.expenseRoutes() {
                         else -> return@patch call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid splitMode"))
                     }
 
-                    val updated = ExpenseRepository.update(expenseId, body.title, total, paidBy, body.splitMode, body.category, participants)
+                    val updated = ExpenseRepository.update(expenseId, body.title, total, paidBy, body.splitMode, body.category, participants, actorId = call.currentUserId())
                         ?: return@patch call.respond(HttpStatusCode.NotFound, MessageResponse("Expense not found"))
                     call.respond(updated.toResponse())
                     val editor = call.currentUserId()

@@ -6,6 +6,8 @@ import com.google.gson.reflect.TypeToken
 import com.splitpay.data.model.Expense
 import com.splitpay.data.model.Group
 import com.splitpay.data.model.Member
+import com.splitpay.data.network.ExpenseActivityResponse
+import com.splitpay.data.network.ExpenseResponse
 
 object AppCache {
     private val gson = Gson()
@@ -19,6 +21,10 @@ object AppCache {
     var archivedGroups: List<Group>? = null
     val groupMembers: MutableMap<String, List<Member>> = mutableMapOf()
     val expensesByGroup: MutableMap<String, List<Expense>> = mutableMapOf()
+
+    // Expense detail cache — keyed by expenseId
+    val expenseDetails: MutableMap<String, ExpenseResponse> = mutableMapOf()
+    val expenseActivities: MutableMap<String, List<ExpenseActivityResponse>> = mutableMapOf()
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("splitpay_cache", Context.MODE_PRIVATE)
@@ -42,12 +48,15 @@ object AppCache {
         archivedGroups = null
         groupMembers.clear()
         expensesByGroup.clear()
+        expenseDetails.clear()
+        expenseActivities.clear()
         // Keep disk cache so next login shows data instantly before refresh
     }
 
     fun invalidateGroup(groupId: String) {
         groupMembers.remove(groupId)
-        expensesByGroup.remove(groupId)
+        val removedExpenseIds = expensesByGroup.remove(groupId)?.map { it.id } ?: emptyList()
+        removedExpenseIds.forEach { expenseDetails.remove(it); expenseActivities.remove(it) }
         groups         = groups?.filter { it.id != groupId }
         archivedGroups = archivedGroups?.filter { it.id != groupId }
     }

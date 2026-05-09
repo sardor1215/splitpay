@@ -63,9 +63,10 @@ fun HomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val groups by homeViewModel.groups.collectAsStateWithLifecycle()
-    val totalOwed = groups.filter { it.balance > 0 }.sumOf { it.balance }
-    val totalOwe = groups.filter { it.balance < 0 }.sumOf { -it.balance }
+    val groups         by homeViewModel.groups.collectAsStateWithLifecycle()
+    val accountBalance by homeViewModel.accountBalance.collectAsStateWithLifecycle()
+    val totalOwed  = groups.filter { it.balance > 0 }.sumOf { it.balance }
+    val totalOwe   = groups.filter { it.balance < 0 }.sumOf { -it.balance }
     var selectedTab by remember { mutableIntStateOf(0) }
 
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
@@ -82,7 +83,7 @@ fun HomeScreen(
             item {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "TOTAL BALANCE",
+                    text = "ACCOUNT BALANCE",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = OnSurfaceVariant.copy(alpha = 0.7f),
@@ -90,7 +91,7 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "$${String.format("%.2f", totalOwed - totalOwe)}",
+                    text = "$${String.format("%.2f", accountBalance)}",
                     fontSize = 52.sp,
                     fontWeight = FontWeight.Black,
                     color = Primary,
@@ -99,22 +100,22 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // ── Owe / Owed cards ──────────────────────────────────────────
+            // ── 3 balance cards ───────────────────────────────────────────
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     BalanceCard(
-                        modifier = Modifier.weight(1f),
-                        label = "YOU OWE",
-                        amount = totalOwe,
+                        modifier    = Modifier.weight(1f),
+                        label       = "YOU OWE",
+                        amount      = totalOwe,
                         accentColor = Tertiary
                     )
                     BalanceCard(
-                        modifier = Modifier.weight(1f),
-                        label = "YOU ARE OWED",
-                        amount = totalOwed,
+                        modifier    = Modifier.weight(1f),
+                        label       = "OWED TO YOU",
+                        amount      = totalOwed,
                         accentColor = Secondary
                     )
                 }
@@ -194,7 +195,7 @@ fun HomeScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "A",
+                        text = homeViewModel.userInitial,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp

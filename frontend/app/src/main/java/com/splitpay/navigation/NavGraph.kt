@@ -7,6 +7,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.splitpay.ui.admin.AdminScreen
+import com.splitpay.ui.expense.EditExpenseScreen
+import com.splitpay.ui.expense.ExpenseDetailScreen
 import com.splitpay.ui.kyc.KycScreen
 import com.splitpay.ui.auth.LoginScreen
 import com.splitpay.ui.auth.RegisterScreen
@@ -17,8 +19,14 @@ import com.splitpay.ui.expense.AddExpenseScreen
 import com.splitpay.ui.group.GroupDetailScreen
 import com.splitpay.ui.profile.ProfileScreen
 import com.splitpay.ui.settlement.SettlementScreen
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.splitpay.data.local.AuthEvents
 import com.splitpay.data.local.TokenManager
@@ -29,7 +37,7 @@ fun NavGraph(navController: NavHostController) {
 
     val context = LocalContext.current
     val tokenManager = remember { TokenManager(context) }
-    
+
     val startDestination = if (tokenManager.isLoggedIn()) {
         Screen.Home.route
     } else {
@@ -43,6 +51,25 @@ fun NavGraph(navController: NavHostController) {
                 popUpTo(0) { inclusive = true }
             }
         }
+    }
+
+    // Show dialog + logout when account is suspended
+    var suspensionMessage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        AuthEvents.accountSuspended.collect { msg -> suspensionMessage = msg }
+    }
+    suspensionMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Account Suspended") },
+            text  = { Text(msg) },
+            confirmButton = {
+                Button(onClick = {
+                    suspensionMessage = null
+                    navController.navigate(Screen.Login.route) { popUpTo(0) { inclusive = true } }
+                }) { Text("OK") }
+            }
+        )
     }
 
     NavHost(
@@ -146,6 +173,12 @@ fun NavGraph(navController: NavHostController) {
                 },
                 onNavigateToSettlement = { id ->
                     navController.navigate(Screen.Settlement.createRoute(id))
+                },
+                onNavigateToExpenseDetail = { gId, eId ->
+                    navController.navigate(Screen.ExpenseDetail.createRoute(gId, eId))
+                },
+                onNavigateToEditExpense = { gId, eId ->
+                    navController.navigate(Screen.EditExpense.createRoute(gId, eId))
                 }
             )
         }
@@ -196,6 +229,36 @@ fun NavGraph(navController: NavHostController) {
         // ─── KYC ─────────────────────────────────────────────
         composable(Screen.Kyc.route) {
             KycScreen(onNavigateBack = { navController.popBackStack() })
+        }
+
+        // ─── Edit Expense ─────────────────────────────────────
+        composable(
+            route = Screen.EditExpense.route,
+            arguments = listOf(
+                navArgument("groupId")   { type = NavType.StringType },
+                navArgument("expenseId") { type = NavType.StringType }
+            )
+        ) { back ->
+            val gId = back.arguments?.getString("groupId")   ?: ""
+            val eId = back.arguments?.getString("expenseId") ?: ""
+            EditExpenseScreen(groupId = gId, expenseId = eId, onNavigateBack = { navController.popBackStack() })
+        }
+
+        // ─── Expense Detail ───────────────────────────────────
+        composable(
+            route = Screen.ExpenseDetail.route,
+            arguments = listOf(
+                navArgument("groupId")   { type = NavType.StringType },
+                navArgument("expenseId") { type = NavType.StringType }
+            )
+        ) { back ->
+            val gId = back.arguments?.getString("groupId")   ?: ""
+            val eId = back.arguments?.getString("expenseId") ?: ""
+            ExpenseDetailScreen(
+                groupId       = gId,
+                expenseId     = eId,
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
     }
 }

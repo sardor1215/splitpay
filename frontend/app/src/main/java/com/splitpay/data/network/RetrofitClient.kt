@@ -68,12 +68,29 @@ object RetrofitClient {
         }
     }
 
+    // Detect 403 suspension — clear token and notify app to show dialog + logout
+    private val suspensionInterceptor = Interceptor { chain ->
+        val response = chain.proceed(chain.request())
+        if (response.code == 403) {
+            val bodyStr = response.peekBody(Long.MAX_VALUE).string()
+            val msg = runCatching {
+                org.json.JSONObject(bodyStr).getString("message")
+            }.getOrElse { "Your account has been suspended." }
+            if (msg.contains("suspended", ignoreCase = true)) {
+                SplitPayApp.instance.tokenManager.clear()
+                AuthEvents.notifySuspended(msg)
+            }
+        }
+        response
+    }
+
     private val logging = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BASIC
     }
 
     private val client = OkHttpClient.Builder()
         .addInterceptor(authInterceptor)
+        .addInterceptor(suspensionInterceptor)
         .addInterceptor(logging)
         .authenticator(tokenAuthenticator)
         .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)

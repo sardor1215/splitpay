@@ -18,6 +18,32 @@ object AmlService {
     var newAccountDays: Int                   = 30
     var autoSuspendAfterAlerts: Int           = 3   // pending alerts before auto-suspend
 
+    /**
+     * Returns a violation message if the expense should be blocked, null if it's allowed.
+     * Does NOT write anything to the DB — call this before creating the expense.
+     */
+    fun preCheck(userId: UUID, amount: BigDecimal, groupId: UUID): String? = transaction {
+        if (amount >= largeTransactionThreshold)
+            return@transaction "Transaction of ${"%.2f".format(amount)} exceeds the allowed limit of ${"%.2f".format(largeTransactionThreshold)}"
+
+        val windowStart = OffsetDateTime.now().minusHours(highFrequencyWindowHours.toLong())
+        val count = Expenses.select {
+            (Expenses.paidBy eq userId) and
+            (Expenses.groupId eq groupId) and
+            (Expenses.createdAt greaterEq windowStart)
+        }.count().toInt()
+        if (count >= highFrequencyCount)
+            return@transaction "Too many transactions in the last ${highFrequencyWindowHours}h ($count / $highFrequencyCount allowed)"
+
+        val cutoff = OffsetDateTime.now().minusDays(newAccountDays.toLong())
+        val isNew = Users.select { (Users.id eq userId) and (Users.createdAt greaterEq cutoff) }.count() > 0
+        val halfThreshold = largeTransactionThreshold.divide(BigDecimal(2))
+        if (isNew && amount >= halfThreshold)
+            return@transaction "New accounts cannot make transactions over ${"%.2f".format(halfThreshold)}"
+
+        null
+    }
+
     fun checkExpense(expenseId: UUID, userId: UUID, amount: BigDecimal, groupId: UUID) {
         transaction {
             checkLargeTransaction(expenseId, userId, amount)

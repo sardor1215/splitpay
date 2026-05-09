@@ -24,7 +24,8 @@ data class UserProfileResponse(
     val preferredCurrency: String,
     val isVerified: Boolean,
     val isAdmin: Boolean = false,
-    val kycStatus: String? = null
+    val kycStatus: String? = null,
+    val accountBalance: Double = 0.0
 )
 
 data class UpdateProfileRequest(
@@ -190,6 +191,21 @@ data class AdminGroupResponse(
     val expenseCount: Int,
     val totalAmount: Double,
     val createdAt: String
+)
+
+// ── Expense detail ────────────────────────────────────────────────────────
+data class ExpenseActivityResponse(
+    val id: String,
+    val userId: String,
+    val userName: String,
+    val action: String,
+    val details: String?,
+    val createdAt: String
+)
+
+data class ExpenseDetailResponse(
+    val expense: ExpenseResponse,
+    val activities: List<ExpenseActivityResponse>
 )
 
 // ── Balances & Settlements ────────────────────────────────────────────────

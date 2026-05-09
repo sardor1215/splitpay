@@ -173,7 +173,10 @@ class AddExpenseViewModel(app: Application) : AndroidViewModel(app) {
                     AppCache.expensesByGroup[groupId] = listOf(newExpense) + (AppCache.expensesByGroup[groupId] ?: emptyList())
                     onSuccess()
                 } else {
-                    _error.value = "Error ${response.code()}"
+                    val serverMsg = runCatching {
+                        org.json.JSONObject(response.errorBody()?.string() ?: "").getString("message")
+                    }.getOrNull()
+                    _error.value = serverMsg ?: "Error ${response.code()}"
                 }
             }.onFailure {
                 _error.value = "Cannot reach the server"

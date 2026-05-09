@@ -42,18 +42,23 @@ class KycViewModel(app: Application) : AndroidViewModel(app) {
     fun loadStatus() {
         viewModelScope.launch {
             _isLoading.value = true
-            runCatching { api.getKycStatus() }.onSuccess { r ->
-                if (r.isSuccessful) _kycStatus.value = r.body()
-                else _error.value = "Failed to load KYC status"
-            }.onFailure { _error.value = "Cannot reach server" }
+            fetchStatus()
             _isLoading.value = false
         }
+    }
+
+    private suspend fun fetchStatus() {
+        runCatching { api.getKycStatus() }.onSuccess { r ->
+            if (r.isSuccessful) _kycStatus.value = r.body()
+            else _error.value = "Failed to load KYC status"
+        }.onFailure { _error.value = "Cannot reach server" }
     }
 
     fun uploadDocument(contentResolver: ContentResolver, uri: Uri, docType: String) {
         viewModelScope.launch {
             _uploadingDoc.value = docType
             _error.value = null
+            val wasRejected = _kycStatus.value?.kycStatus == "rejected"
             runCatching {
                 val tmpFile = uriToTempFile(contentResolver, uri, docType)
                 val requestFile = tmpFile.asRequestBody(contentResolver.getType(uri)?.toMediaTypeOrNull() ?: "image/jpeg".toMediaTypeOrNull())
@@ -63,7 +68,13 @@ class KycViewModel(app: Application) : AndroidViewModel(app) {
             }.onSuccess { r ->
                 if (r.isSuccessful) {
                     _successMessage.value = "${docType.replace("_", " ").replaceFirstChar { it.uppercase() }} uploaded successfully"
-                    loadStatus()
+                    fetchStatus()
+                    // Auto-submit when all rejected docs have been re-uploaded
+                    if (wasRejected && hasAllDocumentsReady()) {
+                        runCatching { api.submitKycForReview() }.onSuccess { sR ->
+                            if (sR.isSuccessful) fetchStatus()
+                        }
+                    }
                 } else {
                     _error.value = "Upload failed (${r.code()})"
                 }
@@ -83,9 +94,17 @@ class KycViewModel(app: Application) : AndroidViewModel(app) {
 
     val requiredDocTypes = listOf("id_front", "id_back", "passport", "selfie")
 
+    // For the Submit button (first-time): all 4 must be freshly uploaded
     fun hasAllDocuments(): Boolean {
-        val uploaded = _kycStatus.value?.documents?.map { it.docType }?.toSet() ?: emptySet()
-        return requiredDocTypes.all { it in uploaded }
+        val docs = _kycStatus.value?.documents ?: return false
+        return requiredDocTypes.all { type -> docs.any { it.docType == type && it.status == "uploaded" } }
+    }
+
+    // For auto-submit after re-upload: accepted or freshly uploaded counts as ready
+    private fun hasAllDocumentsReady(): Boolean {
+        val docs = _kycStatus.value?.documents ?: return false
+        val byType = docs.associateBy { it.docType }
+        return requiredDocTypes.all { byType[it]?.status in listOf("uploaded", "approved") }
     }
 
     fun submitForReview() {

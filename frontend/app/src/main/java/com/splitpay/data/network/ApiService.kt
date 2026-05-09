@@ -66,6 +66,12 @@ interface ApiService {
     @GET("groups/{groupId}/expenses")
     suspend fun getExpenses(@Path("groupId") groupId: String): Response<List<ExpenseResponse>>
 
+    @GET("groups/{groupId}/expenses/{expenseId}")
+    suspend fun getExpenseDetail(
+        @Path("groupId") groupId: String,
+        @Path("expenseId") expenseId: String
+    ): Response<ExpenseDetailResponse>
+
     @POST("groups/{groupId}/expenses")
     suspend fun createExpense(@Path("groupId") groupId: String, @Body body: CreateExpenseRequest): Response<ExpenseResponse>
 

@@ -27,7 +27,8 @@ data class User(
     val isAdmin: Boolean = false,
     val lastActivityAt: OffsetDateTime? = null,
     val amlStatus: String = "clear",
-    val kycStatus: String = "none"
+    val kycStatus: String = "none",
+    val accountBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO
 )
 
 object UserRepository {
@@ -199,6 +200,7 @@ object UserRepository {
         isAdmin               = this[Users.isAdmin],
         lastActivityAt        = this[Users.lastActivityAt],
         amlStatus             = this[Users.amlStatus],
-        kycStatus             = this[Users.kycStatus]
+        kycStatus             = this[Users.kycStatus],
+        accountBalance        = this[Users.accountBalance]
     )
 }

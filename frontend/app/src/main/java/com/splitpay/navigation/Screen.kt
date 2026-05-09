@@ -38,4 +38,14 @@ sealed class Screen(val route: String) {
 
     // KYC
     data object Kyc : Screen("kyc")
+
+    // Expense Detail
+    data object ExpenseDetail : Screen("group/{groupId}/expense/{expenseId}") {
+        fun createRoute(groupId: String, expenseId: String) = "group/$groupId/expense/$expenseId"
+    }
+
+    // Edit Expense
+    data object EditExpense : Screen("group/{groupId}/expense/{expenseId}/edit") {
+        fun createRoute(groupId: String, expenseId: String) = "group/$groupId/expense/$expenseId/edit"
+    }
 }
