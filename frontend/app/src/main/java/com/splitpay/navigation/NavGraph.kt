@@ -6,19 +6,24 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.splitpay.SplitPayApp
 import com.splitpay.ui.admin.AdminScreen
-import com.splitpay.ui.expense.EditExpenseScreen
-import com.splitpay.ui.expense.ExpenseDetailScreen
+import com.splitpay.ui.notifications.NotificationsScreen
 import com.splitpay.ui.kyc.KycScreen
 import com.splitpay.ui.auth.LoginScreen
 import com.splitpay.ui.auth.RegisterScreen
 import com.splitpay.ui.groups.CreateGroupScreen
 import com.splitpay.ui.groups.GroupsScreen
 import com.splitpay.ui.home.HomeScreen
-import com.splitpay.ui.expense.AddExpenseScreen
 import com.splitpay.ui.group.GroupDetailScreen
 import com.splitpay.ui.profile.ProfileScreen
-import com.splitpay.ui.settlement.SettlementScreen
+import com.splitpay.ui.space.CreateSpaceScreen
+import com.splitpay.ui.space.SpaceDetailScreen
+import com.splitpay.ui.space.SpaceListScreen
+import com.splitpay.viewmodel.GroupDetailViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.collectAsState
+import com.splitpay.data.network.GroupMemberResponse
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -121,8 +126,18 @@ fun NavGraph(navController: NavHostController) {
                 onNavigateToCreateGroup = {
                     navController.navigate(Screen.CreateGroup.route)
                 },
-                onNavigateToSettlement = { groupId ->
-                    navController.navigate(Screen.Settlement.createRoute(groupId))
+                onNavigateToNotifications = {
+                    navController.navigate(Screen.Notifications.route)
+                }
+            )
+        }
+
+        // ─── Notifications ──────────────────────────────────────
+        composable(Screen.Notifications.route) {
+            NotificationsScreen(
+                onNavigateBack  = { navController.popBackStack() },
+                onNavigateToSpace = { groupId, spaceId ->
+                    navController.navigate(Screen.SpaceDetail.createRoute(groupId, spaceId))
                 }
             )
         }
@@ -143,6 +158,9 @@ fun NavGraph(navController: NavHostController) {
                 },
                 onNavigateToCreateGroup = {
                     navController.navigate(Screen.CreateGroup.route)
+                },
+                onNavigateToNotifications = {
+                    navController.navigate(Screen.Notifications.route)
                 }
             )
         }
@@ -168,41 +186,70 @@ fun NavGraph(navController: NavHostController) {
             GroupDetailScreen(
                 groupId = groupId,
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToAddExpense = { id ->
-                    navController.navigate(Screen.AddExpense.createRoute(id))
+                onNavigateToExpense = { spaceId ->
+                    navController.navigate(Screen.SpaceDetail.createRoute(groupId, spaceId))
                 },
-                onNavigateToSettlement = { id ->
-                    navController.navigate(Screen.Settlement.createRoute(id))
-                },
-                onNavigateToExpenseDetail = { gId, eId ->
-                    navController.navigate(Screen.ExpenseDetail.createRoute(gId, eId))
-                },
-                onNavigateToEditExpense = { gId, eId ->
-                    navController.navigate(Screen.EditExpense.createRoute(gId, eId))
+                onNavigateToCreateExpense = {
+                    navController.navigate(Screen.CreateSpace.createRoute(groupId))
                 }
             )
         }
 
-        // ─── Settlement ────────────────────────────────────
+        // ─── Space List ───────────────────────────────────
         composable(
-            route = Screen.Settlement.route,
+            route = Screen.SpaceList.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val groupId = backStackEntry.arguments?.getString("groupId") ?: ""
-            SettlementScreen(
-                groupId = groupId,
-                onNavigateBack = { navController.popBackStack() }
+        ) { back ->
+            val groupId = back.arguments?.getString("groupId") ?: ""
+            SpaceListScreen(
+                groupId        = groupId,
+                onNavigateBack = { navController.popBackStack() },
+                onSpaceClick   = { spaceId -> navController.navigate(Screen.SpaceDetail.createRoute(groupId, spaceId)) },
+                onCreateSpace  = { navController.navigate(Screen.CreateSpace.createRoute(groupId)) }
             )
         }
 
-        // ─── Add Expense ───────────────────────────────────
+        // ─── Create Space ─────────────────────────────────
         composable(
-            route = Screen.AddExpense.route,
+            route = Screen.CreateSpace.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val groupId = backStackEntry.arguments?.getString("groupId") ?: ""
-            AddExpenseScreen(
-                groupId = groupId,
+        ) { back ->
+            val groupId = back.arguments?.getString("groupId") ?: ""
+            val tokenManager = remember { TokenManager(context) }
+            val currentUserId = tokenManager.userId ?: ""
+            val groupVm: GroupDetailViewModel = viewModel()
+            val rawMembers by groupVm.members.collectAsState()
+            LaunchedEffect(groupId) { groupVm.loadGroup(groupId) }
+            // Convertir GroupMember (local) → GroupMemberResponse (network)
+            val members = rawMembers.map { GroupMemberResponse(it.userId, it.name, it.role, "") }
+            CreateSpaceScreen(
+                groupId       = groupId,
+                members       = members,
+                currentUserId = currentUserId,
+                onNavigateBack = { navController.popBackStack() },
+                onSpaceCreated = { spaceId ->
+                    navController.navigate(Screen.SpaceDetail.createRoute(groupId, spaceId)) {
+                        popUpTo(Screen.CreateSpace.createRoute(groupId)) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // ─── Space Detail ─────────────────────────────────
+        composable(
+            route = Screen.SpaceDetail.route,
+            arguments = listOf(
+                navArgument("groupId") { type = NavType.StringType },
+                navArgument("spaceId") { type = NavType.StringType }
+            )
+        ) { back ->
+            val groupId = back.arguments?.getString("groupId") ?: ""
+            val spaceId = back.arguments?.getString("spaceId") ?: ""
+            val tokenManager = remember { TokenManager(context) }
+            SpaceDetailScreen(
+                groupId       = groupId,
+                spaceId       = spaceId,
+                currentUserId = tokenManager.userId ?: "",
                 onNavigateBack = { navController.popBackStack() }
             )
         }
@@ -231,34 +278,5 @@ fun NavGraph(navController: NavHostController) {
             KycScreen(onNavigateBack = { navController.popBackStack() })
         }
 
-        // ─── Edit Expense ─────────────────────────────────────
-        composable(
-            route = Screen.EditExpense.route,
-            arguments = listOf(
-                navArgument("groupId")   { type = NavType.StringType },
-                navArgument("expenseId") { type = NavType.StringType }
-            )
-        ) { back ->
-            val gId = back.arguments?.getString("groupId")   ?: ""
-            val eId = back.arguments?.getString("expenseId") ?: ""
-            EditExpenseScreen(groupId = gId, expenseId = eId, onNavigateBack = { navController.popBackStack() })
-        }
-
-        // ─── Expense Detail ───────────────────────────────────
-        composable(
-            route = Screen.ExpenseDetail.route,
-            arguments = listOf(
-                navArgument("groupId")   { type = NavType.StringType },
-                navArgument("expenseId") { type = NavType.StringType }
-            )
-        ) { back ->
-            val gId = back.arguments?.getString("groupId")   ?: ""
-            val eId = back.arguments?.getString("expenseId") ?: ""
-            ExpenseDetailScreen(
-                groupId       = gId,
-                expenseId     = eId,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
     }
 }

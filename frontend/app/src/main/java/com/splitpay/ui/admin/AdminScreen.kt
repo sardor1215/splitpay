@@ -9,7 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
@@ -36,24 +36,28 @@ import com.splitpay.data.network.AdminKycDocResponse
 import com.splitpay.data.network.AdminUserResponse
 import com.splitpay.data.network.AmlAlertResponse
 import com.splitpay.data.network.GdprConfigUpdateRequest
+import com.splitpay.ui.theme.LocalAppColors
 import com.splitpay.viewmodel.AdminViewModel
 
-private val Primary          = Color(0xFF2B348D)
-private val PrimaryContainer = Color(0xFF444DA6)
-private val Surface          = Color(0xFFF9F9FC)
-private val SurfaceLow       = Color(0xFFF3F3F6)
-private val SurfaceLowest    = Color(0xFFFFFFFF)
-private val OnSurface        = Color(0xFF1A1C1E)
-private val OnSurfaceVariant = Color(0xFF3F4949)
-private val Secondary        = Color(0xFF1B6D24)
-private val Tertiary         = Color(0xFF84000C)
-private val Warning          = Color(0xFFB45309)
+private val Warning = Color(0xFFB45309)
 
 @Composable
 fun AdminScreen(
     onNavigateBack: () -> Unit,
     viewModel: AdminViewModel = viewModel()
 ) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val PrimaryContainer = c.primaryContainer
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val Surface          = c.surface
+    val SurfaceLowest    = c.surfaceLowest
+    val SurfaceLow       = c.surfaceLow
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+
     val stats        by viewModel.stats.collectAsStateWithLifecycle()
     val users        by viewModel.users.collectAsStateWithLifecycle()
     val groups       by viewModel.groups.collectAsStateWithLifecycle()
@@ -65,7 +69,7 @@ fun AdminScreen(
     val actionResult by viewModel.actionResult.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Users", "Groups", "KYC", "Alerts", "Config")
+    val tabs = listOf("Users", "Balances", "Groups", "KYC", "Alerts", "Config")
     val pendingCount    = amlAlerts.count { it.status == "pending" }
     val kycPendingCount = kycPending.size
 
@@ -145,17 +149,19 @@ fun AdminScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) { items(users) { UserRow(it, viewModel) } }
 
-                        1 -> LazyColumn(
+                        1 -> BalancesTab(users, viewModel)
+
+                        2 -> LazyColumn(
                             Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) { items(groups) { GroupRow(it) } }
 
-                        2 -> KycReviewTab(kycPending, viewModel)
+                        3 -> KycReviewTab(kycPending, viewModel)
 
-                        3 -> AmlAlertsTab(amlAlerts, viewModel)
+                        4 -> AmlAlertsTab(amlAlerts, viewModel)
 
-                        4 -> GdprConfigTab(gdprConfig, viewModel)
+                        5 -> GdprConfigTab(gdprConfig, viewModel)
                     }
                 }
             }
@@ -178,7 +184,7 @@ fun AdminScreen(
                         modifier = Modifier.size(40.dp).clip(CircleShape).clickable { onNavigateBack() },
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.ArrowBack, null, tint = Primary, modifier = Modifier.size(22.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Primary, modifier = Modifier.size(22.dp))
                     }
                     Text("Admin Dashboard", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Primary)
                     Box(
@@ -193,10 +199,243 @@ fun AdminScreen(
     }
 }
 
+// ── Balances Tab ───────────────────────────────────────────────────────────
+
+@Composable
+private fun BalancesTab(users: List<AdminUserResponse>, viewModel: AdminViewModel) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val SurfaceLowest    = c.surfaceLowest
+    val SurfaceLow       = c.surfaceLow
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+
+    // Dialog state
+    var target    by remember { mutableStateOf<AdminUserResponse?>(null) }
+    var mode      by remember { mutableStateOf("add") }   // "set" | "add" | "subtract"
+    var amountStr by remember { mutableStateOf("") }
+    var note      by remember { mutableStateOf("") }
+
+    if (target != null) {
+        AlertDialog(
+            onDismissRequest = { target = null; amountStr = ""; note = "" },
+            containerColor   = SurfaceLow,
+            title = {
+                Column {
+                    Text("Manage Balance", fontWeight = FontWeight.Bold, color = OnSurface, fontSize = 17.sp)
+                    Text(target!!.name, fontSize = 13.sp, color = OnSurfaceVariant)
+                    Text("Current: $${String.format("%.2f", target!!.accountBalance)}",
+                        fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (target!!.accountBalance >= 0) Primary else Tertiary)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Mode selector
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("add" to "Add", "subtract" to "Subtract", "set" to "Set to").forEach { (key, label) ->
+                            val selected = mode == key
+                            val color = when (key) {
+                                "add"      -> Secondary
+                                "subtract" -> Tertiary
+                                else       -> Primary
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (selected) color else color.copy(alpha = 0.08f))
+                                    .clickable { mode = key }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    label,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (selected) Color.White else color
+                                )
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value         = amountStr,
+                        onValueChange = { amountStr = it.filter { c -> c.isDigit() || c == '.' } },
+                        label         = { Text("Amount (USD)") },
+                        singleLine    = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier      = Modifier.fillMaxWidth(),
+                        leadingIcon   = { Text("$", fontWeight = FontWeight.Bold, color = OnSurfaceVariant) }
+                    )
+                    OutlinedTextField(
+                        value         = note,
+                        onValueChange = { note = it },
+                        label         = { Text("Note (optional)") },
+                        singleLine    = true,
+                        modifier      = Modifier.fillMaxWidth()
+                    )
+                    // Preview of new balance
+                    val amt = amountStr.toDoubleOrNull() ?: 0.0
+                    val preview = when (mode) {
+                        "set"      -> amt
+                        "add"      -> target!!.accountBalance + amt
+                        "subtract" -> maxOf(0.0, target!!.accountBalance - amt)
+                        else       -> target!!.accountBalance
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Primary.copy(alpha = 0.06f))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("New balance", fontSize = 12.sp, color = OnSurfaceVariant)
+                        Text(
+                            "$${String.format("%.2f", preview)}",
+                            fontSize = 14.sp, fontWeight = FontWeight.ExtraBold,
+                            color = Primary
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                val amt = amountStr.toDoubleOrNull()
+                TextButton(
+                    onClick = {
+                        if (amt != null && amt > 0) {
+                            viewModel.updateUserBalance(target!!.id, target!!.name, mode, amt, note.ifBlank { null })
+                            target = null; amountStr = ""; note = ""
+                        }
+                    },
+                    enabled = amountStr.toDoubleOrNull()?.let { it > 0 } == true
+                ) { Text("Confirm", color = Primary, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { target = null; amountStr = ""; note = "" }) {
+                    Text("Cancel", color = OnSurfaceVariant)
+                }
+            }
+        )
+    }
+
+    if (users.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No users", color = OnSurfaceVariant)
+        }
+        return
+    }
+
+    // Search / filter
+    var query by remember { mutableStateOf("") }
+    val filtered = if (query.isBlank()) users
+                   else users.filter { it.name.contains(query, ignoreCase = true) || it.email.contains(query, ignoreCase = true) }
+
+    Column(Modifier.fillMaxSize()) {
+        // Search bar
+        OutlinedTextField(
+            value         = query,
+            onValueChange = { query = it },
+            placeholder   = { Text("Search users…", fontSize = 13.sp) },
+            singleLine    = true,
+            modifier      = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            shape         = RoundedCornerShape(14.dp)
+        )
+
+        // Total balance stat
+        val totalBalance = users.sumOf { it.accountBalance }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Primary.copy(alpha = 0.07f))
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Total balance across all users", fontSize = 12.sp, color = OnSurfaceVariant)
+            Text("$${String.format("%.2f", totalBalance)}", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Primary)
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(filtered, key = { it.id }) { user ->
+                val balanceColor = if (user.accountBalance > 0) Secondary else OnSurfaceVariant
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceLowest)
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Avatar
+                    Box(
+                        modifier = Modifier.size(46.dp).clip(CircleShape)
+                            .background(Primary.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            user.name.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                            fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Primary
+                        )
+                    }
+                    // Name + email
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(user.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
+                        Text(user.email, fontSize = 11.sp, color = OnSurfaceVariant, maxLines = 1)
+                    }
+                    // Balance
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            "$${String.format("%.2f", user.accountBalance)}",
+                            fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = balanceColor
+                        )
+                        // Recharge button
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Primary.copy(alpha = 0.1f))
+                                .clickable {
+                                    target = user
+                                    mode = "add"
+                                    amountStr = ""
+                                    note = ""
+                                }
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text("Manage", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Primary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ── KYC Review Tab ─────────────────────────────────────────────────────────
 
 @Composable
 private fun KycReviewTab(docs: List<AdminKycDocResponse>, viewModel: AdminViewModel) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val SurfaceLowest    = c.surfaceLowest
+    val SurfaceLow       = c.surfaceLow
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+
     var rejectTarget by remember { mutableStateOf<AdminKycDocResponse?>(null) }
     var rejectReason by remember { mutableStateOf("") }
 
@@ -361,6 +600,9 @@ private fun KycReviewTab(docs: List<AdminKycDocResponse>, viewModel: AdminViewMo
 
 @Composable
 private fun AmlAlertsTab(alerts: List<AmlAlertResponse>, viewModel: AdminViewModel) {
+    val c = LocalAppColors.current
+    val OnSurfaceVariant = c.onSurfaceVariant
+
     var filter by remember { mutableStateOf("pending") }
     val filtered = if (filter == "all") alerts else alerts.filter { it.status == filter }
 
@@ -397,6 +639,15 @@ private fun AmlAlertsTab(alerts: List<AmlAlertResponse>, viewModel: AdminViewMod
 
 @Composable
 private fun AlertRow(alert: AmlAlertResponse, viewModel: AdminViewModel) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val PrimaryContainer = c.primaryContainer
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val SurfaceLowest    = c.surfaceLowest
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+
     val typeColor = when (alert.alertType) {
         "large_transaction" -> Primary
         "high_frequency"    -> Warning
@@ -469,6 +720,10 @@ private fun AlertRow(alert: AmlAlertResponse, viewModel: AdminViewModel) {
 
 @Composable
 private fun GdprConfigTab(config: Map<String, String>, viewModel: AdminViewModel) {
+    val c = LocalAppColors.current
+    val Primary  = c.primary
+    val Tertiary = c.tertiary
+
     var archiveMonths    by remember(config) { mutableStateOf(config["archive_after_months"] ?: "12") }
     var deleteMonths     by remember(config) { mutableStateOf(config["delete_after_months"] ?: "24") }
     var largeThreshold   by remember(config) { mutableStateOf(config["large_transaction_threshold"] ?: "1000") }
@@ -568,6 +823,14 @@ private fun StatCard(modifier: Modifier, label: String, value: String, color: Co
 
 @Composable
 private fun UserRow(user: AdminUserResponse, viewModel: AdminViewModel) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val SurfaceLowest    = c.surfaceLowest
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+
     val amlColor = when (user.amlStatus ?: "clear") {
         "flagged"   -> Warning
         "suspended" -> Tertiary
@@ -627,6 +890,21 @@ private fun UserRow(user: AdminUserResponse, viewModel: AdminViewModel) {
                 )
             }
         }
+        // Balance row
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Balance: $${String.format("%.2f", user.accountBalance)}",
+                fontSize = 12.sp,
+                color = if (user.accountBalance > 0) Secondary else OnSurfaceVariant,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
         // Lift suspension button — only shown for auto-suspended users
         if (user.amlStatus == "suspended") {
             Spacer(Modifier.height(10.dp))
@@ -641,6 +919,12 @@ private fun UserRow(user: AdminUserResponse, viewModel: AdminViewModel) {
 
 @Composable
 private fun GroupRow(group: AdminGroupResponse) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val SurfaceLowest    = c.surfaceLowest
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(SurfaceLowest).padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,

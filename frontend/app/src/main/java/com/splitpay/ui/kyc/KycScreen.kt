@@ -11,7 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.HourglassTop
@@ -31,16 +31,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.data.network.KycDocumentResponse
+import com.splitpay.ui.theme.LocalAppColors
 import com.splitpay.viewmodel.KycViewModel
 
-private val Primary          = Color(0xFF2B348D)
-private val Secondary        = Color(0xFF1B6D24)
-private val Tertiary         = Color(0xFF84000C)
-private val Warning          = Color(0xFFB45309)
-private val Surface          = Color(0xFFF9F9FC)
-private val SurfaceLowest    = Color(0xFFFFFFFF)
-private val OnSurface        = Color(0xFF1A1C1E)
-private val OnSurfaceVariant = Color(0xFF3F4949)
+private val Warning = Color(0xFFB45309)
 
 private val DOC_TYPES = listOf(
     "id_front"  to "ID Card — Front",
@@ -54,6 +48,18 @@ fun KycScreen(
     onNavigateBack: () -> Unit,
     viewModel: KycViewModel = viewModel()
 ) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val PrimaryContainer = c.primaryContainer
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val Surface          = c.surface
+    val SurfaceLowest    = c.surfaceLowest
+    val SurfaceLow       = c.surfaceLow
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+
     val kycStatus      by viewModel.kycStatus.collectAsStateWithLifecycle()
     val isLoading      by viewModel.isLoading.collectAsStateWithLifecycle()
     val uploadingDoc   by viewModel.uploadingDoc.collectAsStateWithLifecycle()
@@ -205,7 +211,7 @@ fun KycScreen(
                         modifier = Modifier.size(40.dp).clip(CircleShape).clickable { onNavigateBack() },
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.ArrowBack, null, tint = Primary, modifier = Modifier.size(22.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Primary, modifier = Modifier.size(22.dp))
                     }
                     Text("Identity Verification", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Primary)
                     Spacer(Modifier.size(40.dp))
@@ -217,6 +223,11 @@ fun KycScreen(
 
 @Composable
 private fun KycStatusBanner(status: String) {
+    val c = LocalAppColors.current
+    val Primary   = c.primary
+    val Secondary = c.secondary
+    val Tertiary  = c.tertiary
+
     val (icon, color, title, sub) = when (status) {
         "approved" -> KycBannerData(Icons.Default.CheckCircle,  Secondary, "Verified",        "Your identity is confirmed")
         "pending"  -> KycBannerData(Icons.Default.HourglassTop, Warning,   "Under Review",    "We'll notify you when done")
@@ -251,6 +262,14 @@ private fun DocumentCard(
     canUpload: Boolean,
     onUpload: () -> Unit
 ) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val SurfaceLowest    = c.surfaceLowest
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+
     val statusColor = when (existing?.status) {
         "approved" -> Secondary
         "rejected" -> Tertiary

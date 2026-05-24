@@ -3,20 +3,17 @@ package com.splitpay.viewmodel
 import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
+import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.splitpay.data.network.KycDocumentResponse
 import com.splitpay.data.network.KycStatusResponse
+import com.splitpay.data.network.KycUploadRequest
 import com.splitpay.data.network.RetrofitClient
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.MultipartBody
-import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
-import java.io.File
-import java.io.FileOutputStream
+import kotlinx.coroutines.withContext
 
 class KycViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -36,6 +33,8 @@ class KycViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _successMessage = MutableStateFlow<String?>(null)
     val successMessage: StateFlow<String?> = _successMessage
+
+    val requiredDocTypes = listOf("id_front", "id_back", "passport", "selfie")
 
     init { loadStatus() }
 
@@ -59,48 +58,45 @@ class KycViewModel(app: Application) : AndroidViewModel(app) {
             _uploadingDoc.value = docType
             _error.value = null
             val wasRejected = _kycStatus.value?.kycStatus == "rejected"
+
             runCatching {
-                val tmpFile = uriToTempFile(contentResolver, uri, docType)
-                val requestFile = tmpFile.asRequestBody(contentResolver.getType(uri)?.toMediaTypeOrNull() ?: "image/jpeg".toMediaTypeOrNull())
-                val filePart    = MultipartBody.Part.createFormData("file", tmpFile.name, requestFile)
-                val docTypePart = docType.toRequestBody("text/plain".toMediaTypeOrNull())
-                api.uploadKycDocument(docTypePart, filePart)
+                // Lire et encoder le fichier en base64 sur le thread IO
+                val (base64, fileName) = withContext(Dispatchers.IO) {
+                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: error("Cannot read file")
+                    val mimeType = contentResolver.getType(uri) ?: "image/jpeg"
+                    val ext = mimeType.substringAfterLast('/', "jpg")
+                    val name = "${docType}_${System.currentTimeMillis()}.$ext"
+                    Base64.encodeToString(bytes, Base64.NO_WRAP) to name
+                }
+                api.uploadKycDocument(KycUploadRequest(docType, base64, fileName))
             }.onSuccess { r ->
                 if (r.isSuccessful) {
-                    _successMessage.value = "${docType.replace("_", " ").replaceFirstChar { it.uppercase() }} uploaded successfully"
+                    _successMessage.value =
+                        "${docType.replace("_", " ").replaceFirstChar { it.uppercase() }} uploaded"
                     fetchStatus()
-                    // Auto-submit when all rejected docs have been re-uploaded
                     if (wasRejected && hasAllDocumentsReady()) {
                         runCatching { api.submitKycForReview() }.onSuccess { sR ->
                             if (sR.isSuccessful) fetchStatus()
                         }
                     }
                 } else {
-                    _error.value = "Upload failed (${r.code()})"
+                    val msg = runCatching {
+                        org.json.JSONObject(r.errorBody()?.string() ?: "").getString("message")
+                    }.getOrDefault("Upload failed (${r.code()})")
+                    _error.value = msg
                 }
             }.onFailure { _error.value = "Upload error: ${it.message}" }
+
             _uploadingDoc.value = null
         }
     }
 
-    private fun uriToTempFile(contentResolver: ContentResolver, uri: Uri, docType: String): File {
-        val ext  = contentResolver.getType(uri)?.substringAfterLast('/') ?: "jpg"
-        val file = File(getApplication<Application>().cacheDir, "${docType}_${System.currentTimeMillis()}.$ext")
-        contentResolver.openInputStream(uri)?.use { input ->
-            FileOutputStream(file).use { output -> input.copyTo(output) }
-        }
-        return file
-    }
-
-    val requiredDocTypes = listOf("id_front", "id_back", "passport", "selfie")
-
-    // For the Submit button (first-time): all 4 must be freshly uploaded
     fun hasAllDocuments(): Boolean {
         val docs = _kycStatus.value?.documents ?: return false
         return requiredDocTypes.all { type -> docs.any { it.docType == type && it.status == "uploaded" } }
     }
 
-    // For auto-submit after re-upload: accepted or freshly uploaded counts as ready
     private fun hasAllDocumentsReady(): Boolean {
         val docs = _kycStatus.value?.documents ?: return false
         val byType = docs.associateBy { it.docType }

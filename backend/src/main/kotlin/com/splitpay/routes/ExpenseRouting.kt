@@ -1,6 +1,7 @@
 package com.splitpay.routes
 
 import com.splitpay.repository.Expense
+import com.splitpay.repository.ExpenseInvitationRepository
 import com.splitpay.repository.ExpenseRepository
 import com.splitpay.repository.GroupRepository
 import com.splitpay.repository.UserRepository
@@ -51,7 +52,8 @@ import java.util.UUID
     val category: String,
     val participants: List<ParticipantResponse>,
     val createdAt: String,
-    val updatedAt: String? = null
+    val updatedAt: String? = null,
+    val pendingInvitationId: String? = null  // set if current user hasn't consented yet
 )
 
 @Serializable data class ParticipantResponse(
@@ -71,7 +73,8 @@ import java.util.UUID
 
 @Serializable data class ExpenseDetailResponse(
     val expense: ExpenseResponse,
-    val activities: List<ExpenseActivityResponse>
+    val activities: List<ExpenseActivityResponse>,
+    val pendingInvitationId: String? = null  // set if current user has a pending consent request
 )
 
 @Serializable data class BalanceResponse(
@@ -149,14 +152,20 @@ fun Route.expenseRoutes() {
                 call.respond(HttpStatusCode.Created, expense.toResponse())
 
                 if (body.category != "settlement") {
-                    val memberIds = GroupRepository.getMembers(groupId).map { it.userId }
-                    FcmService.notifyGroupMembers(
-                        groupId      = groupId,
-                        excludeUserId = paidBy,
-                        memberIds    = memberIds,
-                        title        = "New expense",
-                        body         = "${expense.paidByName} added \"${expense.title}\" — ${"%.2f".format(expense.amount.toDouble())}"
-                    )
+                    val creatorName = UserRepository.findById(paidBy)?.name ?: "Someone"
+                    // Create consent invitations for each participant except the payer
+                    val nonPayerParticipants = participants.map { it.first }.filter { it != paidBy }
+                    nonPayerParticipants.forEach { participantId ->
+                        runCatching {
+                            ExpenseInvitationRepository.create(expense.id, groupId, participantId, paidBy)
+                            FcmService.notifyUser(
+                                userId = participantId,
+                                title  = "New expense — consent required",
+                                body   = "$creatorName added you to \"${expense.title}\" (${"%.2f".format(expense.amount.toDouble())})",
+                                data   = mapOf("type" to "expense_invitation", "expenseId" to expense.id.toString())
+                            )
+                        }
+                    }
                     // AML monitoring (fire-and-forget, don't block response)
                     runCatching {
                         AmlService.checkExpense(expense.id, paidBy, total, groupId)
@@ -170,8 +179,17 @@ fun Route.expenseRoutes() {
                     ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
                     ?: return@get call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid group ID"))
 
+                val currentUserId = call.currentUserId()
+                val pendingByExpense = ExpenseInvitationRepository
+                    .findPendingForUser(currentUserId)
+                    .associateBy { it.expenseId }
+
                 val expenses = ExpenseRepository.findByGroup(groupId)
-                call.respond(expenses.map { it.toResponse() })
+                call.respond(expenses.map { e ->
+                    e.toResponse().copy(
+                        pendingInvitationId = pendingByExpense[e.id]?.id?.toString()
+                    )
+                })
             }
 
             route("/{expenseId}") {
@@ -185,10 +203,13 @@ fun Route.expenseRoutes() {
                     val expense = ExpenseRepository.findById(expenseId)
                         ?: return@get call.respond(HttpStatusCode.NotFound, MessageResponse("Expense not found"))
                     val activities = ExpenseRepository.getActivities(expenseId)
+                    val currentUserId = call.currentUserId()
+                    val pendingInvitation = ExpenseInvitationRepository.findPendingForUser(currentUserId)
+                        .find { it.expenseId == expenseId }
 
                     call.respond(ExpenseDetailResponse(
-                        expense    = expense.toResponse(),
-                        activities = activities.map {
+                        expense             = expense.toResponse(),
+                        activities          = activities.map {
                             ExpenseActivityResponse(
                                 id        = it.id.toString(),
                                 userId    = it.userId.toString(),
@@ -197,7 +218,8 @@ fun Route.expenseRoutes() {
                                 details   = it.details,
                                 createdAt = it.createdAt.toString()
                             )
-                        }
+                        },
+                        pendingInvitationId = pendingInvitation?.id?.toString()
                     ))
                 }
 

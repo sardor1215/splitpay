@@ -54,7 +54,8 @@ import java.util.UUID
     val name: String? = null,
     val phone: String? = null,
     val avatarUrl: String? = null,
-    val preferredCurrency: String? = null
+    val preferredCurrency: String? = null,
+    val requireConsent: Boolean? = null
 )
 
 // ── Response models ────────────────────────────────────────────────────────
@@ -76,10 +77,12 @@ import java.util.UUID
     val isVerified: Boolean,
     val isAdmin: Boolean = false,
     val kycStatus: String = "none",
-    val accountBalance: Double = 0.0
+    val accountBalance: Double = 0.0,
+    val requireConsent: Boolean = false
 )
 
 @Serializable data class MessageResponse(val message: String)
+@Serializable data class RequireConsentRequest(val value: Boolean)
 
 // ── Helper ─────────────────────────────────────────────────────────────────
 fun ApplicationCall.currentUserId(): UUID =
@@ -262,7 +265,8 @@ fun Route.authRoutes() {
                 name              = body.name,
                 phone             = body.phone,
                 avatarUrl         = body.avatarUrl,
-                preferredCurrency = body.preferredCurrency
+                preferredCurrency = body.preferredCurrency,
+                requireConsent    = body.requireConsent
             ) ?: return@patch call.respond(HttpStatusCode.NotFound, MessageResponse("User not found"))
 
             call.respond(user.toProfileResponse())
@@ -288,10 +292,34 @@ fun Route.authRoutes() {
             call.respondBytes(pdfBytes, ContentType.Text.Plain)
         }
 
-        // DELETE /me
+        // POST /me/require-consent
+        post("/me/require-consent") {
+            val body = call.receive<RequireConsentRequest>()
+            UserRepository.setRequireConsent(call.currentUserId(), body.value)
+            call.respond(HttpStatusCode.OK, MessageResponse("Consent preference updated"))
+        }
+
+        // DELETE /me — blocked if user has outstanding debts
         delete("/me") {
-            val success = UserRepository.softDelete(call.currentUserId())
-            if (success) call.respond(HttpStatusCode.OK, MessageResponse("Account deleted. Your data has been anonymized."))
+            val userId = call.currentUserId()
+
+            // Check outstanding balances across all groups
+            val groups = com.splitpay.repository.GroupRepository.findByUser(userId)
+            val groupIds = groups.map { it.id }
+            if (groupIds.isNotEmpty()) {
+                val balances = com.splitpay.repository.ExpenseRepository
+                    .calculateUserBalancesForGroups(groupIds, userId)
+                val netBalance = balances.values.sumOf { it }
+                if (netBalance < -0.01) {
+                    return@delete call.respond(
+                        HttpStatusCode.Conflict,
+                        MessageResponse("You have outstanding debts of $${"%.2f".format(-netBalance)}. Please settle all debts before deleting your account.")
+                    )
+                }
+            }
+
+            val success = UserRepository.softDelete(userId)
+            if (success) call.respond(HttpStatusCode.OK, MessageResponse("Account deleted. Your data has been anonymized in accordance with GDPR."))
             else call.respond(HttpStatusCode.InternalServerError, MessageResponse("Failed to delete account"))
         }
 
@@ -351,5 +379,6 @@ private fun com.splitpay.repository.User.toProfileResponse() = UserProfileRespon
     isVerified        = isVerified,
     isAdmin           = isAdmin,
     kycStatus         = kycStatus,
-    accountBalance    = accountBalance.toDouble()
+    accountBalance    = accountBalance.toDouble(),
+    requireConsent    = requireConsent
 )

@@ -7,14 +7,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.splitpay.SplitPayApp
 import com.splitpay.data.local.AppCache
-import com.splitpay.data.model.Expense
 import com.splitpay.data.model.Group
 import com.splitpay.data.model.Member
 import com.splitpay.data.network.AddMemberRequest
 import com.splitpay.data.network.LookupRequest
-import com.splitpay.data.network.ParticipantRequest
 import com.splitpay.data.network.RetrofitClient
-import com.splitpay.data.network.UpdateExpenseRequest
 import com.splitpay.data.network.UpdateGroupRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -23,7 +20,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class Settlement(val memberName: String, val amount: Double, val owesYou: Boolean)
 data class GroupMember(val userId: String, val name: String, val role: String)
 
 // Reuse AppContact/DeviceContact from CreateGroupViewModel
@@ -46,18 +42,6 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _members = MutableStateFlow<List<GroupMember>>(emptyList())
     val members: StateFlow<List<GroupMember>> = _members
-
-    private val _expenses = MutableStateFlow<List<Expense>>(emptyList())
-    val expenses: StateFlow<List<Expense>> = _expenses
-
-    private val _settlements = MutableStateFlow<List<Settlement>>(emptyList())
-    val settlements: StateFlow<List<Settlement>> = _settlements
-
-    private val _yourBalance = MutableStateFlow(0.0)
-    val yourBalance: StateFlow<Double> = _yourBalance
-
-    private val _totalSpending = MutableStateFlow(0.0)
-    val totalSpending: StateFlow<Double> = _totalSpending
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
@@ -98,21 +82,12 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
                 _isAdmin.value = cached.find { it.userId == userId }?.role == "admin"
                 _group.value = _group.value?.copy(members = cached.map { it.name })
             }
-            AppCache.expensesByGroup[groupId]?.let { cached ->
-                _expenses.value = cached
-                _totalSpending.value = cached.sumOf { it.amount }
-            }
-
             // Only show spinner if nothing cached
-            val hasCachedData = _expenses.value.isNotEmpty() || _members.value.isNotEmpty()
-            _isLoading.value = !hasCachedData
+            _isLoading.value = _members.value.isEmpty()
             _error.value = null
 
-            val groupDef       = async { runCatching { api.getGroup(groupId) } }
-            val membersDef     = async { runCatching { api.getMembers(groupId) } }
-            val expensesDef    = async { runCatching { api.getExpenses(groupId) } }
-            val balancesDef    = async { runCatching { api.getBalances(groupId) } }
-            val settlementsDef = async { runCatching { api.getSettlements(groupId) } }
+            val groupDef   = async { runCatching { api.getGroup(groupId) } }
+            val membersDef = async { runCatching { api.getMembers(groupId) } }
 
             groupDef.await().onSuccess { r ->
                 r.body()?.let { g ->
@@ -135,50 +110,6 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
                     _members.value = list.map { GroupMember(it.userId, it.name, it.role) }
                     _isAdmin.value = list.find { it.userId == userId }?.role == "admin"
                     AppCache.groupMembers[groupId] = list.map { Member(it.userId, it.name, it.role) }
-                }
-            }
-
-            expensesDef.await().onSuccess { r ->
-                r.body()?.let { list ->
-                    val expenses = list.map { e ->
-                        val myShare = e.participants
-                            .find { it.userId == userId }
-                            ?.let { p -> if (e.paidBy == userId) e.amount - p.share else -p.share }
-                            ?: 0.0
-                        Expense(
-                            id           = e.id,
-                            title        = e.title,
-                            amount       = e.amount,
-                            paidBy       = e.paidByName,
-                            paidById     = e.paidBy,
-                            date         = e.createdAt.take(10),
-                            yourShare    = myShare,
-                            category     = e.category ?: "other",
-                            splitMode    = e.splitMode ?: "equally",
-                            participants = e.participants.map { it.userId }
-                        )
-                    }
-                    _expenses.value = expenses
-                    _totalSpending.value = expenses.sumOf { it.amount }
-                    AppCache.expensesByGroup[groupId] = expenses
-                }
-            }
-
-            balancesDef.await().onSuccess { r ->
-                r.body()?.let { list ->
-                    _yourBalance.value = list.find { it.userId == userId }?.amount ?: 0.0
-                }
-            }
-
-            settlementsDef.await().onSuccess { r ->
-                r.body()?.let { list ->
-                    _settlements.value = list.map { s ->
-                        Settlement(
-                            memberName = if (s.fromUserId == userId) s.toName else s.fromName,
-                            amount     = s.amount,
-                            owesYou    = s.toUserId == userId
-                        )
-                    }
                 }
             }
 
@@ -248,14 +179,20 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
             runCatching {
                 api.addMember(groupId, AddMemberRequest(userId))
             }.onSuccess { r ->
-                if (r.isSuccessful) {
-                    _members.value = _members.value + GroupMember(userId, userName, "member")
-                    _group.value = _group.value?.copy(members = _members.value.map { it.name })
-                    AppCache.groupMembers[groupId] = _members.value.map { Member(it.userId, it.name, it.role) }
-                    _addableContacts.value = _addableContacts.value.filter { it.userId != userId }
-                    onSuccess()
-                } else {
-                    onError("Failed to add member (${r.code()})")
+                when (r.code()) {
+                    200 -> {
+                        _members.value = _members.value + GroupMember(userId, userName, "member")
+                        _group.value = _group.value?.copy(members = _members.value.map { it.name })
+                        AppCache.groupMembers[groupId] = _members.value.map { Member(it.userId, it.name, it.role) }
+                        _addableContacts.value = _addableContacts.value.filter { it.userId != userId }
+                        onSuccess()
+                    }
+                    202 -> {
+                        // Invitation sent — user requires consent
+                        _addableContacts.value = _addableContacts.value.filter { it.userId != userId }
+                        onError("Invitation sent to $userName — waiting for their approval")
+                    }
+                    else -> onError("Failed to add member (${r.code()})")
                 }
             }.onFailure { onError("Cannot reach server") }
         }
@@ -295,6 +232,19 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun leaveGroup(groupId: String) {
+        viewModelScope.launch {
+            runCatching { api.leaveGroup(groupId) }.onSuccess { r ->
+                if (r.isSuccessful) {
+                    AppCache.invalidateGroup(groupId)
+                    _groupDeleted.value = true
+                } else {
+                    _error.value = "Failed to leave group"
+                }
+            }.onFailure { _error.value = "Cannot reach server" }
+        }
+    }
+
     fun deleteGroup(groupId: String) {
         viewModelScope.launch {
             runCatching {
@@ -307,72 +257,6 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
                     _error.value = "Failed to delete group"
                 }
             }.onFailure { _error.value = "Cannot reach server" }
-        }
-    }
-
-    fun editExpense(
-        groupId: String,
-        expenseId: String,
-        title: String,
-        amount: Double,
-        paidByUserId: String,
-        splitMode: String,
-        category: String,
-        onSuccess: () -> Unit
-    ) {
-        if (title.isBlank() || amount <= 0) return
-        val participantIds = _expenses.value.find { it.id == expenseId }?.participants ?: return
-        val share = amount / participantIds.size.coerceAtLeast(1)
-        viewModelScope.launch {
-            runCatching {
-                api.updateExpense(
-                    groupId,
-                    expenseId,
-                    UpdateExpenseRequest(
-                        title        = title.trim(),
-                        amount       = amount,
-                        paidBy       = paidByUserId,
-                        splitMode    = splitMode,
-                        category     = category,
-                        participants = participantIds.map { ParticipantRequest(it, share) }
-                    )
-                )
-            }.onSuccess { r ->
-                if (r.isSuccessful) {
-                    val updated = r.body()!!
-                    _expenses.value = _expenses.value.map { e ->
-                        if (e.id == expenseId) e.copy(
-                            title     = updated.title,
-                            amount    = updated.amount,
-                            paidBy    = updated.paidByName,
-                            paidById  = updated.paidBy,
-                            category  = updated.category ?: "other",
-                            splitMode = updated.splitMode ?: "equally"
-                        ) else e
-                    }
-                    _totalSpending.value = _expenses.value.sumOf { it.amount }
-                    AppCache.expensesByGroup[groupId] = _expenses.value
-                    onSuccess()
-                } else {
-                    _error.value = "Failed to update expense"
-                }
-            }.onFailure { _error.value = "Cannot reach server" }
-        }
-    }
-
-    fun deleteExpense(groupId: String, expenseId: String, onSuccess: () -> Unit) {
-        viewModelScope.launch {
-            runCatching { api.deleteExpense(groupId, expenseId) }
-                .onSuccess { r ->
-                    if (r.isSuccessful) {
-                        _expenses.value = _expenses.value.filter { it.id != expenseId }
-                        _totalSpending.value = _expenses.value.sumOf { it.amount }
-                        AppCache.expensesByGroup[groupId] = _expenses.value
-                        onSuccess()
-                    } else {
-                        _error.value = "Failed to delete expense"
-                    }
-                }.onFailure { _error.value = "Cannot reach server" }
         }
     }
 

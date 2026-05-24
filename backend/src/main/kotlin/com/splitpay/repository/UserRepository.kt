@@ -28,7 +28,8 @@ data class User(
     val lastActivityAt: OffsetDateTime? = null,
     val amlStatus: String = "clear",
     val kycStatus: String = "none",
-    val accountBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO
+    val accountBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
+    val requireConsent: Boolean = false
 )
 
 object UserRepository {
@@ -140,15 +141,27 @@ object UserRepository {
         name: String? = null,
         phone: String? = null,
         avatarUrl: String? = null,
-        preferredCurrency: String? = null
+        preferredCurrency: String? = null,
+        requireConsent: Boolean? = null
     ): User? = loggedTransaction {
-        Users.update({ Users.id eq userId }) {
-            if (name != null)              it[Users.name]              = name
-            if (phone != null)             it[Users.phone]             = phone
-            if (avatarUrl != null)         it[Users.avatarUrl]         = avatarUrl
-            if (preferredCurrency != null) it[Users.preferredCurrency] = preferredCurrency
+        val hasFields = name != null || phone != null || avatarUrl != null ||
+                        preferredCurrency != null || requireConsent != null
+        if (hasFields) {
+            Users.update({ Users.id eq userId }) {
+                if (name != null)              it[Users.name]              = name
+                if (phone != null)             it[Users.phone]             = phone
+                if (avatarUrl != null)         it[Users.avatarUrl]         = avatarUrl
+                if (preferredCurrency != null) it[Users.preferredCurrency] = preferredCurrency
+                if (requireConsent != null)    it[Users.requireConsent]    = requireConsent
+            }
         }
         findById(userId)
+    }
+
+    fun setRequireConsent(userId: UUID, value: Boolean): Boolean = loggedTransaction {
+        Users.update({ Users.id eq userId }) {
+            it[Users.requireConsent] = value
+        } > 0
     }
 
     // ── Activity + AML ────────────────────────────────────────────────────
@@ -162,6 +175,24 @@ object UserRepository {
         Users.update({ Users.id eq userId }) {
             it[Users.amlStatus] = status
         } > 0
+    }
+
+    // ── Balance management ────────────────────────────────────────────────
+    fun setAccountBalance(userId: UUID, amount: java.math.BigDecimal): java.math.BigDecimal = loggedTransaction {
+        Users.update({ Users.id eq userId }) {
+            it[Users.accountBalance] = amount
+        }
+        amount
+    }
+
+    fun adjustAccountBalance(userId: UUID, delta: java.math.BigDecimal): java.math.BigDecimal = loggedTransaction {
+        val current = Users.select { Users.id eq userId }
+            .singleOrNull()?.get(Users.accountBalance) ?: java.math.BigDecimal.ZERO
+        val newBalance = (current + delta).max(java.math.BigDecimal.ZERO)
+        Users.update({ Users.id eq userId }) {
+            it[Users.accountBalance] = newBalance
+        }
+        newBalance
     }
 
     // ── Soft delete ───────────────────────────────────────────────────────
@@ -201,6 +232,7 @@ object UserRepository {
         lastActivityAt        = this[Users.lastActivityAt],
         amlStatus             = this[Users.amlStatus],
         kycStatus             = this[Users.kycStatus],
-        accountBalance        = this[Users.accountBalance]
+        accountBalance        = this[Users.accountBalance],
+        requireConsent        = this[Users.requireConsent]
     )
 }

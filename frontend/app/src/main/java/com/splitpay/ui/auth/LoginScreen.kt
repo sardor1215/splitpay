@@ -23,22 +23,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.ui.theme.InterFontFamily
+import com.splitpay.ui.theme.LocalAppColors
 import com.splitpay.viewmodel.AuthUiState
 import com.splitpay.viewmodel.AuthViewModel
-
-// ── Brand colors (from DESIGN.md) ────────────────────────────────────────────
-private val Primary = Color(0xFF2B348D)
-private val PrimaryContainer = Color(0xFF444DA6)
-private val Surface = Color(0xFFF9F9FC)
-private val SurfaceContainerLowest = Color(0xFFFFFFFF)
-private val SurfaceContainerLow = Color(0xFFF3F3F6)
-private val OnSurface = Color(0xFF1A1C1E)
-private val OnSurfaceVariant = Color(0xFF3F4949)
-private val OutlineVariant = Color(0xFFBEC8C9)
 
 @Composable
 fun LoginScreen(
@@ -46,7 +38,23 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit,
     authViewModel: AuthViewModel = viewModel()
 ) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val PrimaryContainer = c.primaryContainer
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val Surface          = c.surface
+    val SurfaceLowest    = c.surfaceLowest
+    val SurfaceLow       = c.surfaceLow
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+    val SurfaceContainerLowest = c.surfaceLowest
+    val SurfaceContainerLow    = c.surfaceLow
+    val ErrorColor             = Color(0xFFBA1A1A)
+
     val uiState by authViewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -235,13 +243,14 @@ fun LoginScreen(
                     ) {
                         SocialButton(
                             modifier = Modifier.weight(1f),
-                            label = "Google",
-                            onClick = { /* TODO: OAuth Google */ }
+                            label    = "Google",
+                            onClick  = { authViewModel.loginWithGoogle(context) },
+                            enabled  = uiState !is AuthUiState.Loading
                         )
                         SocialButton(
                             modifier = Modifier.weight(1f),
-                            label = "Apple",
-                            onClick = { /* TODO: OAuth Apple */ }
+                            label    = "Apple",
+                            onClick  = { /* TODO: OAuth Apple */ }
                         )
                     }
                 }
@@ -290,6 +299,11 @@ fun UnderlineField(
     onTogglePassword: (() -> Unit)? = null,
     trailingAction: (@Composable () -> Unit)? = null
 ) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val OnSurface        = c.onSurface
+    val OutlineVariant   = c.outlineVariant
+
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -366,10 +380,17 @@ fun UnderlineField(
 fun SocialButton(
     modifier: Modifier = Modifier,
     label: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
+    val c = LocalAppColors.current
+    val OnSurface          = c.onSurface
+    val OutlineVariant     = c.outlineVariant
+    val SurfaceContainerLow = c.surfaceLow
+
     OutlinedButton(
-        onClick = onClick,
+        onClick  = onClick,
+        enabled  = enabled,
         modifier = modifier.height(46.dp),
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.outlinedButtonColors(

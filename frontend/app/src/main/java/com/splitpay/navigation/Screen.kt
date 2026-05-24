@@ -15,20 +15,8 @@ sealed class Screen(val route: String) {
         fun createRoute(groupId: String) = "group/$groupId"
     }
 
-    // Dépenses
-    data object AddExpense : Screen("group/{groupId}/add_expense") {
-        fun createRoute(groupId: String) = "group/$groupId/add_expense"
-    }
-
-    // Balances
-    data object Balances : Screen("group/{groupId}/balances") {
-        fun createRoute(groupId: String) = "group/$groupId/balances"
-    }
-
-    // Settlement
-    data object Settlement : Screen("group/{groupId}/settlement") {
-        fun createRoute(groupId: String) = "group/$groupId/settlement"
-    }
+    // Notifications
+    data object Notifications : Screen("notifications")
 
     // Profil
     data object Profile : Screen("profile")
@@ -39,13 +27,16 @@ sealed class Screen(val route: String) {
     // KYC
     data object Kyc : Screen("kyc")
 
-    // Expense Detail
-    data object ExpenseDetail : Screen("group/{groupId}/expense/{expenseId}") {
-        fun createRoute(groupId: String, expenseId: String) = "group/$groupId/expense/$expenseId"
+    // Espaces
+    data object SpaceList : Screen("group/{groupId}/spaces") {
+        fun createRoute(groupId: String) = "group/$groupId/spaces"
     }
 
-    // Edit Expense
-    data object EditExpense : Screen("group/{groupId}/expense/{expenseId}/edit") {
-        fun createRoute(groupId: String, expenseId: String) = "group/$groupId/expense/$expenseId/edit"
+    data object CreateSpace : Screen("group/{groupId}/spaces/create") {
+        fun createRoute(groupId: String) = "group/$groupId/spaces/create"
+    }
+
+    data object SpaceDetail : Screen("group/{groupId}/spaces/{spaceId}") {
+        fun createRoute(groupId: String, spaceId: String) = "group/$groupId/spaces/$spaceId"
     }
 }

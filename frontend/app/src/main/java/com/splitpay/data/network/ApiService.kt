@@ -18,6 +18,9 @@ interface ApiService {
     @POST("auth/logout")
     suspend fun logout(@Body body: RefreshRequest): Response<MessageResponse>
 
+    @POST("auth/google")
+    suspend fun loginWithGoogle(@Body body: GoogleAuthRequest): Response<AuthResponse>
+
     // ── Profile ───────────────────────────────────────────────────────────
     @GET("me")
     suspend fun getProfile(): Response<UserProfileResponse>
@@ -27,6 +30,28 @@ interface ApiService {
 
     @DELETE("me")
     suspend fun deleteAccount(): Response<MessageResponse>
+
+    @GET("me/payments")
+    suspend fun getPaymentHistory(): Response<List<PaymentHistoryItem>>
+
+    @POST("me/pay")
+    suspend fun directPay(@Body body: DirectPayRequest): Response<DirectPayResponse>
+
+    @GET("groups/{groupId}/debtors")
+    suspend fun getGroupDebtors(@Path("groupId") groupId: String): Response<List<GroupDebtorResponse>>
+
+    @POST("me/require-consent")
+    suspend fun setRequireConsent(@Body body: RequireConsentRequest): Response<MessageResponse>
+
+    // ── Invitations ───────────────────────────────────────────────────────
+    @GET("invitations/pending")
+    suspend fun getPendingInvitations(): Response<List<PendingInvitationResponse>>
+
+    @POST("invitations/{id}/accept")
+    suspend fun acceptInvitation(@Path("id") id: String): Response<MessageResponse>
+
+    @POST("invitations/{id}/decline")
+    suspend fun declineInvitation(@Path("id") id: String): Response<MessageResponse>
 
     // ── Groups ────────────────────────────────────────────────────────────
     @GET("groups")
@@ -56,30 +81,14 @@ interface ApiService {
     @DELETE("groups/{groupId}/members/{userId}")
     suspend fun removeMember(@Path("groupId") groupId: String, @Path("userId") userId: String): Response<MessageResponse>
 
+    @POST("groups/{groupId}/leave")
+    suspend fun leaveGroup(@Path("groupId") groupId: String): Response<MessageResponse>
+
     @PATCH("groups/{groupId}/archive")
     suspend fun archiveGroup(@Path("groupId") groupId: String): Response<MessageResponse>
 
     @PATCH("groups/{groupId}/unarchive")
     suspend fun unarchiveGroup(@Path("groupId") groupId: String): Response<MessageResponse>
-
-    // ── Expenses ──────────────────────────────────────────────────────────
-    @GET("groups/{groupId}/expenses")
-    suspend fun getExpenses(@Path("groupId") groupId: String): Response<List<ExpenseResponse>>
-
-    @GET("groups/{groupId}/expenses/{expenseId}")
-    suspend fun getExpenseDetail(
-        @Path("groupId") groupId: String,
-        @Path("expenseId") expenseId: String
-    ): Response<ExpenseDetailResponse>
-
-    @POST("groups/{groupId}/expenses")
-    suspend fun createExpense(@Path("groupId") groupId: String, @Body body: CreateExpenseRequest): Response<ExpenseResponse>
-
-    @PATCH("groups/{groupId}/expenses/{expenseId}")
-    suspend fun updateExpense(@Path("groupId") groupId: String, @Path("expenseId") expenseId: String, @Body body: UpdateExpenseRequest): Response<ExpenseResponse>
-
-    @DELETE("groups/{groupId}/expenses/{expenseId}")
-    suspend fun deleteExpense(@Path("groupId") groupId: String, @Path("expenseId") expenseId: String): Response<MessageResponse>
 
     // ── FCM ───────────────────────────────────────────────────────────────
     @POST("users/fcm-token")
@@ -118,13 +127,15 @@ interface ApiService {
     @POST("admin/users/{userId}/lift-suspension")
     suspend fun liftSuspension(@Path("userId") userId: String): Response<MessageResponse>
 
+    @PATCH("admin/users/{userId}/balance")
+    suspend fun updateUserBalance(
+        @Path("userId") userId: String,
+        @Body body: AdminBalanceUpdateRequest
+    ): Response<MessageResponse>
+
     // ── KYC (user) ────────────────────────────────────────────────────────
-    @Multipart
     @POST("kyc/documents")
-    suspend fun uploadKycDocument(
-        @Part("docType") docType: okhttp3.RequestBody,
-        @Part file: okhttp3.MultipartBody.Part
-    ): Response<KycDocumentResponse>
+    suspend fun uploadKycDocument(@Body body: KycUploadRequest): Response<KycDocumentResponse>
 
     @GET("kyc/status")
     suspend fun getKycStatus(): Response<KycStatusResponse>
@@ -145,10 +156,55 @@ interface ApiService {
     @POST("admin/kyc/users/{userId}/approve-all")
     suspend fun approveAllKycForUser(@Path("userId") userId: String): Response<MessageResponse>
 
-    // ── Balances & Settlements ────────────────────────────────────────────
-    @GET("groups/{groupId}/balances")
-    suspend fun getBalances(@Path("groupId") groupId: String): Response<List<BalanceResponse>>
+    // ── Espaces (Logique Métier v1.3) ─────────────────────────────────────
+    @POST("groups/{groupId}/spaces")
+    suspend fun createSpace(@Path("groupId") groupId: String, @Body body: CreateSpaceRequest): Response<SpaceResponse>
 
-    @GET("groups/{groupId}/settlements")
-    suspend fun getSettlements(@Path("groupId") groupId: String): Response<List<SettlementResponse>>
+    @GET("groups/{groupId}/spaces")
+    suspend fun getSpaces(@Path("groupId") groupId: String): Response<List<SpaceResponse>>
+
+    @GET("groups/{groupId}/spaces/{spaceId}")
+    suspend fun getSpace(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String): Response<SpaceResponse>
+
+    @POST("groups/{groupId}/spaces/{spaceId}/accept")
+    suspend fun acceptSpace(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String): Response<MessageResponse>
+
+    @POST("groups/{groupId}/spaces/{spaceId}/decline")
+    suspend fun declineSpace(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String): Response<MessageResponse>
+
+    @POST("groups/{groupId}/spaces/{spaceId}/force-launch")
+    suspend fun forceLaunchSpace(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String): Response<MessageResponse>
+
+    @POST("groups/{groupId}/spaces/{spaceId}/settle")
+    suspend fun settleSpace(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String): Response<MessageResponse>
+
+    @POST("groups/{groupId}/spaces/{spaceId}/early-settle")
+    suspend fun requestEarlySettle(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String): Response<MessageResponse>
+
+    @POST("groups/{groupId}/spaces/{spaceId}/early-settle/respond")
+    suspend fun respondEarlySettle(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String, @Body body: EarlySettleVoteRequest): Response<MessageResponse>
+
+    @POST("groups/{groupId}/spaces/{spaceId}/quorum/confirm")
+    suspend fun confirmQuorum(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String): Response<MessageResponse>
+
+    @POST("groups/{groupId}/spaces/{spaceId}/quorum/reject")
+    suspend fun rejectQuorum(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String): Response<MessageResponse>
+
+    @PATCH("groups/{groupId}/spaces/{spaceId}")
+    suspend fun editSpace(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String, @Body body: EditSpaceRequest): Response<SpaceResponse>
+
+    @DELETE("groups/{groupId}/spaces/{spaceId}")
+    suspend fun deleteSpace(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String): Response<MessageResponse>
+
+    @POST("groups/{groupId}/spaces/{spaceId}/assist")
+    suspend fun assistMember(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String, @Body body: AssistRequest): Response<MessageResponse>
+
+    @POST("groups/{groupId}/spaces/{spaceId}/transfer-launcher")
+    suspend fun transferLauncher(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String, @Body body: TransferLauncherRequest): Response<MessageResponse>
+
+    @GET("groups/{groupId}/spaces/{spaceId}/audit")
+    suspend fun getSpaceAudit(@Path("groupId") groupId: String, @Path("spaceId") spaceId: String): Response<List<SpaceAuditEntry>>
+
+    @GET("spaces/pending")
+    suspend fun getPendingSpaceInvitations(): Response<List<PendingSpaceInvitation>>
 }

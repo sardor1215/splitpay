@@ -1,7 +1,10 @@
 package com.splitpay.routes
 
+import com.splitpay.repository.ExpenseInvitationRepository
 import com.splitpay.repository.ExpenseRepository
+import com.splitpay.repository.GroupInvitationRepository
 import com.splitpay.repository.GroupRepository
+import com.splitpay.repository.UserRepository
 import com.splitpay.service.FcmService
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -146,7 +149,7 @@ fun Route.groupRoutes() {
                     call.respond(mapOf("inviteLink" to "$baseUrl/groups/join/$token"))
                 }
 
-                // POST /groups/:id/members — add member directly by userId (admin only)
+                // POST /groups/:id/members — add member (or send invite if consent required)
                 post("/members") {
                     val groupId  = call.groupId() ?: return@post
                     val adminId  = call.currentUserId()
@@ -160,14 +163,34 @@ fun Route.groupRoutes() {
                     if (GroupRepository.isMember(groupId, memberId))
                         return@post call.respond(HttpStatusCode.Conflict, MessageResponse("User is already a member"))
 
-                    GroupRepository.addMember(groupId, memberId)
-                    call.respond(HttpStatusCode.OK, MessageResponse("Member added"))
-                    // Notify all members (including the new one)
-                    val memberIds = GroupRepository.getMembers(groupId).map { it.userId }
-                    val group = GroupRepository.findById(groupId)
-                    runCatching {
-                        FcmService.notifyGroupMembers(groupId, adminId, memberIds,
-                            "New member", "A new member joined ${group?.name ?: "the group"}")
+                    if (GroupInvitationRepository.hasPending(groupId, memberId))
+                        return@post call.respond(HttpStatusCode.Conflict, MessageResponse("An invitation is already pending for this user"))
+
+                    val targetUser = UserRepository.findById(memberId)
+                        ?: return@post call.respond(HttpStatusCode.NotFound, MessageResponse("User not found"))
+
+                    if (targetUser.requireConsent) {
+                        // Send invitation instead of adding directly
+                        val invitationId = GroupInvitationRepository.create(groupId, memberId, adminId)
+                        val group = GroupRepository.findById(groupId)
+                        val inviterName = UserRepository.findById(adminId)?.name ?: "Someone"
+                        runCatching {
+                            FcmService.notifyUser(memberId,
+                                title = "Group Invitation",
+                                body  = "$inviterName invited you to join ${group?.name ?: "a group"}",
+                                data  = mapOf("type" to "group_invitation", "invitationId" to invitationId.toString())
+                            )
+                        }
+                        call.respond(HttpStatusCode.Accepted, MessageResponse("Invitation sent — waiting for user consent"))
+                    } else {
+                        GroupRepository.addMember(groupId, memberId)
+                        call.respond(HttpStatusCode.OK, MessageResponse("Member added"))
+                        val memberIds = GroupRepository.getMembers(groupId).map { it.userId }
+                        val group = GroupRepository.findById(groupId)
+                        runCatching {
+                            FcmService.notifyGroupMembers(groupId, adminId, memberIds,
+                                "New member", "${targetUser.name} joined ${group?.name ?: "the group"}")
+                        }
                     }
                 }
 
@@ -286,8 +309,133 @@ fun Route.groupRoutes() {
                 call.respond(HttpStatusCode.OK, joined.toResponse())
             }
         }
+
+        // ── Invitations ────────────────────────────────────────────────────
+
+        // GET /invitations/pending — returns both group and expense invitations
+        get("/invitations/pending") {
+            val userId       = call.currentUserId()
+            val groupInvs    = GroupInvitationRepository.findPendingForUser(userId).map {
+                PendingInvitationResponse(
+                    id            = it.id.toString(),
+                    type          = "group",
+                    title         = it.groupName,
+                    subtitle      = "Invited by ${it.invitedByName}",
+                    emoji         = it.groupEmoji,
+                    amount        = null,
+                    invitedByName = it.invitedByName,
+                    createdAt     = it.createdAt.toString()
+                )
+            }
+            val expenseInvs  = ExpenseInvitationRepository.findPendingForUser(userId).map {
+                PendingInvitationResponse(
+                    id            = it.id.toString(),
+                    type          = "expense",
+                    title         = it.expenseTitle,
+                    subtitle      = "Added by ${it.invitedByName}",
+                    emoji         = "💸",
+                    amount        = it.share,
+                    invitedByName = it.invitedByName,
+                    createdAt     = it.createdAt.toString()
+                )
+            }
+            call.respond(groupInvs + expenseInvs)
+        }
+
+        // POST /invitations/{id}/accept
+        post("/invitations/{id}/accept") {
+            val userId       = call.currentUserId()
+            val invitationId = call.parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+                ?: return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid invitation ID"))
+
+            val inv = GroupInvitationRepository.findById(invitationId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, MessageResponse("Invitation not found"))
+
+            if (inv.invitedUserId != userId)
+                return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Not your invitation"))
+
+            if (inv.status != "pending")
+                return@post call.respond(HttpStatusCode.Conflict, MessageResponse("Invitation already ${inv.status}"))
+
+            GroupRepository.addMember(inv.groupId, userId)
+            GroupInvitationRepository.updateStatus(invitationId, "accepted")
+            call.respond(HttpStatusCode.OK, MessageResponse("You joined ${inv.groupName}"))
+
+            val memberIds = GroupRepository.getMembers(inv.groupId).map { it.userId }
+            val userName  = UserRepository.findById(userId)?.name ?: "A new member"
+            runCatching {
+                FcmService.notifyGroupMembers(inv.groupId, userId, memberIds,
+                    "New member", "$userName joined ${inv.groupName}")
+            }
+        }
+
+        // POST /invitations/{id}/decline
+        post("/invitations/{id}/decline") {
+            val userId       = call.currentUserId()
+            val invitationId = call.parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+                ?: return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid invitation ID"))
+
+            val inv = GroupInvitationRepository.findById(invitationId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, MessageResponse("Invitation not found"))
+
+            if (inv.invitedUserId != userId)
+                return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Not your invitation"))
+
+            GroupInvitationRepository.updateStatus(invitationId, "declined")
+            call.respond(HttpStatusCode.OK, MessageResponse("Invitation declined"))
+        }
+
+        // POST /invitations/expense/{id}/accept
+        post("/invitations/expense/{id}/accept") {
+            val userId       = call.currentUserId()
+            val invitationId = call.parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+                ?: return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid invitation ID"))
+
+            val inv = ExpenseInvitationRepository.findById(invitationId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, MessageResponse("Invitation not found"))
+
+            if (inv.invitedUserId != userId)
+                return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Not your invitation"))
+
+            if (inv.status != "pending")
+                return@post call.respond(HttpStatusCode.Conflict, MessageResponse("Invitation already ${inv.status}"))
+
+            ExpenseInvitationRepository.accept(invitationId)
+            call.respond(HttpStatusCode.OK, MessageResponse("You accepted the expense"))
+        }
+
+        // POST /invitations/expense/{id}/decline
+        post("/invitations/expense/{id}/decline") {
+            val userId       = call.currentUserId()
+            val invitationId = call.parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+                ?: return@post call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid invitation ID"))
+
+            val inv = ExpenseInvitationRepository.findById(invitationId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, MessageResponse("Invitation not found"))
+
+            if (inv.invitedUserId != userId)
+                return@post call.respond(HttpStatusCode.Forbidden, MessageResponse("Not your invitation"))
+
+            if (inv.status != "pending")
+                return@post call.respond(HttpStatusCode.Conflict, MessageResponse("Invitation already ${inv.status}"))
+
+            ExpenseInvitationRepository.decline(invitationId, userId, inv.expenseId)
+            call.respond(HttpStatusCode.OK, MessageResponse("You declined the expense"))
+        }
     }
 }
+
+@Serializable data class PendingInvitationResponse(
+    val id: String,
+    val type: String,          // "group" | "expense"
+    val title: String,
+    val subtitle: String,
+    val emoji: String,
+    val amount: Double?,
+    val invitedByName: String,
+    val createdAt: String
+)
+
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 private suspend fun ApplicationCall.groupId(): UUID? {

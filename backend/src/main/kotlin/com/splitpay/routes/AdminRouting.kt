@@ -38,8 +38,15 @@ import java.util.UUID
     val isAdmin: Boolean,
     val amlStatus: String,
     val kycStatus: String,
+    val accountBalance: Double,
     val lastActivityAt: String?,
     val createdAt: String
+)
+
+@Serializable data class AdminBalanceUpdateRequest(
+    val mode: String,       // "set" | "add" | "subtract"
+    val amount: Double,
+    val note: String? = null
 )
 
 @Serializable data class AdminGroupResponse(
@@ -125,6 +132,7 @@ fun Route.adminRoutes() {
                         isAdmin        = it.isAdmin,
                         amlStatus      = it.amlStatus,
                         kycStatus      = it.kycStatus,
+                        accountBalance = it.accountBalance.toDouble(),
                         lastActivityAt = it.lastActivityAt?.toString(),
                         createdAt      = it.createdAt.toString()
                     )
@@ -312,6 +320,33 @@ fun Route.adminRoutes() {
                 val body = call.receive<ReviewAlertRequest>()
                 UserRepository.updateAmlStatus(targetId, body.status)
                 call.respond(MessageResponse("User AML status updated"))
+            }
+
+            // PATCH /admin/users/{userId}/balance
+            patch("/users/{userId}/balance") {
+                if (!call.requireAdmin()) return@patch
+                val targetId = call.parameters["userId"]
+                    ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+                    ?: return@patch call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid user ID"))
+
+                val body = call.receive<AdminBalanceUpdateRequest>()
+                if (body.amount < 0)
+                    return@patch call.respond(HttpStatusCode.BadRequest, MessageResponse("Amount must be positive"))
+                if (body.mode !in listOf("set", "add", "subtract"))
+                    return@patch call.respond(HttpStatusCode.BadRequest, MessageResponse("Mode must be 'set', 'add' or 'subtract'"))
+
+                val amount = java.math.BigDecimal(body.amount.toString())
+                val newBalance = when (body.mode) {
+                    "set"      -> UserRepository.setAccountBalance(targetId, amount)
+                    "add"      -> UserRepository.adjustAccountBalance(targetId, amount)
+                    "subtract" -> UserRepository.adjustAccountBalance(targetId, amount.negate())
+                    else       -> return@patch call.respond(HttpStatusCode.BadRequest, MessageResponse("Invalid mode"))
+                }
+
+                call.respond(mapOf(
+                    "message"    to "Balance updated",
+                    "newBalance" to newBalance.toDouble().toString()
+                ))
             }
         }
     }

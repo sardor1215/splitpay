@@ -3,6 +3,7 @@ package com.splitpay.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.splitpay.data.network.AdminBalanceUpdateRequest
 import com.splitpay.data.network.AdminGroupResponse
 import com.splitpay.data.network.AdminKycDocResponse
 import com.splitpay.data.network.AdminStatsResponse
@@ -157,6 +158,33 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
                         _actionResult.value = "Failed (${r.code()})"
                     }
                 }.onFailure { _actionResult.value = "Cannot reach server" }
+        }
+    }
+
+    fun updateUserBalance(userId: String, userName: String, mode: String, amount: Double, note: String? = null) {
+        viewModelScope.launch {
+            runCatching { api.updateUserBalance(userId, AdminBalanceUpdateRequest(mode, amount, note)) }
+                .onSuccess { r ->
+                    if (r.isSuccessful) {
+                        val label = when (mode) {
+                            "set"      -> "Balance set to $${"%.2f".format(amount)}"
+                            "add"      -> "+$${"%.2f".format(amount)} added"
+                            "subtract" -> "-$${"%.2f".format(amount)} deducted"
+                            else       -> "Balance updated"
+                        }
+                        _actionResult.value = "$userName — $label"
+                        // Refresh user list so the new balance shows immediately
+                        runCatching { api.getAdminUsers() }.onSuccess { ur ->
+                            if (ur.isSuccessful) _users.value = ur.body() ?: emptyList()
+                        }
+                    } else {
+                        val msg = runCatching {
+                            org.json.JSONObject(r.errorBody()?.string() ?: "").getString("message")
+                        }.getOrNull() ?: "Failed (${r.code()})"
+                        _actionResult.value = msg
+                    }
+                }
+                .onFailure { _actionResult.value = "Cannot reach server" }
         }
     }
 

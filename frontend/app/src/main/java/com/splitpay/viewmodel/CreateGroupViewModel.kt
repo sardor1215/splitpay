@@ -7,7 +7,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.splitpay.SplitPayApp
 import com.splitpay.data.local.AppCache
-import com.splitpay.data.model.Expense
 import com.splitpay.data.model.Group
 import com.splitpay.data.model.Member
 import com.splitpay.data.network.AddMemberRequest
@@ -162,7 +161,6 @@ class CreateGroupViewModel(app: Application) : AndroidViewModel(app) {
                     val members = mutableListOf(Member(currentUserId ?: "", currentUserName, "admin")) +
                         selectedContacts.map { Member(it.userId, it.name, "member") }
                     AppCache.groupMembers[created.id] = members
-                    AppCache.expensesByGroup[created.id] = emptyList()
 
                     selectedContacts.forEach { contact ->
                         runCatching { api.addMember(created.id, AddMemberRequest(contact.userId)) }

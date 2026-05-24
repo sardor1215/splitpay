@@ -28,7 +28,8 @@ object Database {
         transaction {
             SchemaUtils.createMissingTablesAndColumns(
                 Users, ExpenseGroups, GroupMembers, Expenses, ExpenseParticipants,
-                FcmTokens, AmlAlerts, GdprConfig, KycDocuments, ExpenseActivities
+                FcmTokens, AmlAlerts, GdprConfig, KycDocuments, ExpenseActivities,
+                GroupInvitations, ExpenseInvitations
             )
         }
         println(">>> Database connected!")

@@ -42,19 +42,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.splitpay.ui.theme.LocalAppColors
 import com.splitpay.viewmodel.AppContact
 import com.splitpay.viewmodel.CreateGroupViewModel
 import com.splitpay.viewmodel.DeviceContact
 
-private val Primary          = Color(0xFF2B348D)
-private val PrimaryContainer = Color(0xFF444DA6)
-private val PrimaryFixed     = Color(0xFFE0E0FF)
-private val Secondary        = Color(0xFF1B6D24)
-private val Surface          = Color(0xFFF9F9FC)
-private val SurfaceLowest    = Color(0xFFFFFFFF)
-private val OnSurface        = Color(0xFF1A1C1E)
-private val OnSurfaceVariant = Color(0xFF3F4949)
-private val OutlineVariant   = Color(0xFFBEC8C9)
+private val PrimaryFixed = Color(0xFFE0E0FF)
 
 private const val INVITE_MESSAGE = "Hey! Join me on SplitPay to split expenses easily 🎉\n" +
         "Download the app: https://splitpay.app/download"
@@ -65,6 +58,19 @@ fun CreateGroupScreen(
     onGroupCreated: (groupId: String) -> Unit = {},
     viewModel: CreateGroupViewModel = viewModel()
 ) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val PrimaryContainer = c.primaryContainer
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val Surface          = c.surface
+    val SurfaceLowest    = c.surfaceLowest
+    val SurfaceLow       = c.surfaceLow
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+    val ErrorColor       = Color(0xFFBA1A1A)
+
     val context           = LocalContext.current
     val groupName         by viewModel.groupName.collectAsStateWithLifecycle()
     val selectedEmoji     by viewModel.selectedEmoji.collectAsStateWithLifecycle()
@@ -284,6 +290,18 @@ private fun AllContactsDialog(
     onInvite: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val PrimaryContainer = c.primaryContainer
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val Surface          = c.surface
+    val SurfaceLowest    = c.surfaceLowest
+    val SurfaceLow       = c.surfaceLow
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
 
@@ -385,6 +403,10 @@ private fun AllContactsDialog(
 // ── Reusable components ───────────────────────────────────────────────────────
 @Composable
 private fun SectionHeader(title: String, badge: String? = null) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val OnSurfaceVariant = c.onSurfaceVariant
+
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(title, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = OnSurfaceVariant.copy(alpha = 0.6f), letterSpacing = 1.5.sp)
         if (badge != null) {
@@ -397,6 +419,9 @@ private fun SectionHeader(title: String, badge: String? = null) {
 
 @Composable
 private fun SeeAllButton(label: String, onClick: () -> Unit) {
+    val c = LocalAppColors.current
+    val Primary = c.primary
+
     Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
         .background(Primary.copy(alpha = 0.07f)).clickable { onClick() }.padding(vertical = 14.dp),
         contentAlignment = Alignment.Center) {
@@ -406,6 +431,13 @@ private fun SeeAllButton(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun AppContactRow(contact: AppContact, onToggle: () -> Unit) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val SurfaceLowest    = c.surfaceLowest
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+
     Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(SurfaceLowest)
         .clickable { onToggle() }.padding(16.dp),
         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -430,6 +462,13 @@ private fun AppContactRow(contact: AppContact, onToggle: () -> Unit) {
 
 @Composable
 private fun InviteContactRow(contact: DeviceContact, onInvite: () -> Unit) {
+    val c = LocalAppColors.current
+    val Secondary        = c.secondary
+    val SurfaceLowest    = c.surfaceLowest
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+
     Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(SurfaceLowest)
         .padding(16.dp),
         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

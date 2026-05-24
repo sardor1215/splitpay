@@ -14,11 +14,14 @@ import com.google.firebase.messaging.FirebaseMessaging
 import com.splitpay.data.local.TokenManager
 import com.splitpay.data.network.FcmTokenRequest
 import com.splitpay.data.network.RetrofitClient
+import com.splitpay.data.local.ThemeManager
 import com.splitpay.navigation.NavGraph
 import com.splitpay.ui.theme.SplitPayTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 
 class MainActivity : ComponentActivity() {
 
@@ -53,7 +56,8 @@ class MainActivity : ComponentActivity() {
             }
 
         setContent {
-            SplitPayTheme {
+            val isDark by ThemeManager.isDark.collectAsState()
+            SplitPayTheme(darkTheme = isDark) {
                 val navController = rememberNavController()
                 NavGraph(navController = navController)
             }

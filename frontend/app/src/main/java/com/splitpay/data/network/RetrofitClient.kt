@@ -14,8 +14,8 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
 
-    //private const val BASE_URL = "http://10.0.2.2:8080/"
-    private const val BASE_URL = "http://172.20.34.95:8080/"
+    //private const val BASE_URL = "http://10.0.2.2:3000/"   // émulateur Android
+    private const val BASE_URL = "http://172.20.22.132:3000/" // appareil physique (WiFi)
 
     private val authInterceptor = Interceptor { chain ->
         val token = SplitPayApp.instance.tokenManager.accessToken
@@ -30,11 +30,18 @@ object RetrofitClient {
     // Auto-refresh on 401
     private val tokenAuthenticator = object : Authenticator {
         override fun authenticate(route: Route?, response: okhttp3.Response): Request? {
-            // Avoid infinite loop if refresh itself fails
-            if (response.request.url.toString().contains("/auth/refresh")) return null
+            // Skip all /auth/* endpoints — a 401 there means bad credentials, not session expiry.
+            // Handling it here would incorrectly call notifyExpired() and hide the error message.
+            if (response.request.url.encodedPath.startsWith("/auth/")) return null
 
             val tokenManager = SplitPayApp.instance.tokenManager
-            val refreshToken = tokenManager.refreshToken ?: return null
+            val refreshToken = tokenManager.refreshToken
+            if (refreshToken == null) {
+                // Pas de refresh token — session définitivement expirée
+                tokenManager.clear()
+                AuthEvents.notifyExpired()
+                return null
+            }
 
             // Synchronous refresh call
             val refreshResponse = try {
@@ -48,7 +55,10 @@ object RetrofitClient {
                     .post(body)
                     .build()
                 refreshClient.newCall(req).execute()
-            } catch (e: Exception) { return null }
+            } catch (e: Exception) {
+                // Pas de réseau — ne pas déconnecter, laisser l'utilisateur réessayer
+                return null
+            }
 
             if (!refreshResponse.isSuccessful) {
                 tokenManager.clear()

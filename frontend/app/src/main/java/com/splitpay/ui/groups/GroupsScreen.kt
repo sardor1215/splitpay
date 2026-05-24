@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.data.model.Group
+import com.splitpay.ui.theme.LocalAppColors
 import com.splitpay.viewmodel.HomeViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -54,27 +55,29 @@ private fun formatActivity(iso: String): String {
     } catch (_: Exception) { "RECENTLY" }
 }
 
-// ── Brand colors ──────────────────────────────────────────────────────────────
-private val Primary          = Color(0xFF2B348D)
-private val PrimaryContainer = Color(0xFF444DA6)
-private val Secondary        = Color(0xFF1B6D24)
-private val Tertiary         = Color(0xFF84000C)
-private val Surface          = Color(0xFFF9F9FC)
-private val SurfaceLowest    = Color(0xFFFFFFFF)
-private val SurfaceLow       = Color(0xFFF3F3F6)
-private val OnSurface        = Color(0xFF1A1C1E)
-private val OnSurfaceVariant = Color(0xFF3F4949)
-private val OutlineVariant   = Color(0xFFBEC8C9)
-
 @Composable
 fun GroupsScreen(
     onNavigateToHome: () -> Unit,
     onNavigateToGroup: (String) -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToCreateGroup: () -> Unit,
+    onNavigateToNotifications: () -> Unit = {},
     viewModel: HomeViewModel = viewModel()
 ) {
-    val groups by viewModel.groups.collectAsStateWithLifecycle()
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val PrimaryContainer = c.primaryContainer
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val Surface          = c.surface
+    val SurfaceLowest    = c.surfaceLowest
+    val SurfaceLow       = c.surfaceLow
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+
+    val groups       by viewModel.groups.collectAsStateWithLifecycle()
+    val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
     var searchActive by remember { mutableStateOf(false) }
 
@@ -263,9 +266,11 @@ fun GroupsScreen(
 
         // ── Bottom Navigation ─────────────────────────────────────────────
         GroupsBottomNav(
+            notificationCount = pendingCount,
             onTabSelected = { index ->
                 when (index) {
                     0 -> onNavigateToHome()
+                    2 -> onNavigateToNotifications()
                     3 -> onNavigateToProfile()
                 }
             },
@@ -295,6 +300,18 @@ private fun StatPill(label: String, color: Color) {
 // ── Group Card ────────────────────────────────────────────────────────────────
 @Composable
 private fun GroupCard(group: Group, onClick: () -> Unit) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val PrimaryContainer = c.primaryContainer
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val Surface          = c.surface
+    val SurfaceLowest    = c.surfaceLowest
+    val SurfaceLow       = c.surfaceLow
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+
     val balanceColor = when {
         group.balance > 0 -> Secondary
         group.balance < 0 -> Tertiary
@@ -381,13 +398,26 @@ private fun GroupCard(group: Group, onClick: () -> Unit) {
 // ── Bottom Navigation ─────────────────────────────────────────────────────────
 @Composable
 private fun GroupsBottomNav(
+    notificationCount: Int = 0,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val PrimaryContainer = c.primaryContainer
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val Surface          = c.surface
+    val SurfaceLowest    = c.surfaceLowest
+    val SurfaceLow       = c.surfaceLow
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+
     val tabs = listOf(
         Pair("Home", Icons.Default.Home),
         Pair("Groups", Icons.Default.Group),
-        Pair("Activity", Icons.Default.Notifications),
+        Pair("Notifications", Icons.Default.Notifications),
         Pair("Profile", Icons.Default.Person)
     )
 
@@ -418,20 +448,23 @@ private fun GroupsBottomNav(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = label,
-                            tint = if (isSelected) Primary else OnSurfaceVariant,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = label.uppercase(),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isSelected) Primary else OnSurfaceVariant,
-                            letterSpacing = 0.8.sp
-                        )
+                        Box {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = label,
+                                tint = if (isSelected) Primary else OnSurfaceVariant,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            if (index == 2 && notificationCount > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Red)
+                                        .align(Alignment.TopEnd)
+                                )
+                            }
+                        }
                     }
                 }
             }

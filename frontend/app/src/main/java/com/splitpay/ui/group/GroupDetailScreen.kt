@@ -18,7 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -37,33 +37,23 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.splitpay.data.model.Expense
+import com.splitpay.data.network.SpaceResponse
 import com.splitpay.viewmodel.AddableContact
 import com.splitpay.viewmodel.GroupDetailViewModel
 import com.splitpay.viewmodel.GroupMember
 import com.splitpay.viewmodel.InvitableContact
-import com.splitpay.viewmodel.Settlement
+import com.splitpay.ui.theme.LocalAppColors
+import com.splitpay.viewmodel.SpaceViewModel
 import kotlinx.coroutines.launch
 
-private val Primary = Color(0xFF2B348D)
-private val PrimaryContainer = Color(0xFF444DA6)
-private val Secondary = Color(0xFF1B6D24)
-private val Tertiary = Color(0xFF84000C)
 private val TertiaryFixedDim = Color(0xFFFFB4AC)
-private val Surface = Color(0xFFF9F9FC)
-private val SurfaceContainerLowest = Color(0xFFFFFFFF)
-private val SurfaceContainerLow = Color(0xFFF3F3F6)
-private val SurfaceContainerHigh = Color(0xFFE8E8EA)
-private val OnSurface = Color(0xFF1A1C1E)
-private val OnSurfaceVariant = Color(0xFF3F4949)
-private val OutlineVariant = Color(0xFFBEC8C9)
-private val ErrorColor = Color(0xFFBA1A1A)
 
 private const val INVITE_MESSAGE = "Hey! Join me on SplitPay to split expenses easily 🎉\nDownload: https://splitpay.app/download"
 
@@ -72,37 +62,50 @@ private const val INVITE_MESSAGE = "Hey! Join me on SplitPay to split expenses e
 fun GroupDetailScreen(
     groupId: String,
     onNavigateBack: () -> Unit,
-    onNavigateToAddExpense: (String) -> Unit,
-    onNavigateToSettlement: (String) -> Unit,
-    onNavigateToExpenseDetail: (groupId: String, expenseId: String) -> Unit = { _, _ -> },
-    onNavigateToEditExpense: (groupId: String, expenseId: String) -> Unit = { _, _ -> },
-    viewModel: GroupDetailViewModel = viewModel()
+    onNavigateToExpense: (spaceId: String) -> Unit = {},
+    onNavigateToCreateExpense: () -> Unit = {},
+    viewModel: GroupDetailViewModel = viewModel(),
+    spaceVm: SpaceViewModel = viewModel()
 ) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val PrimaryContainer = c.primaryContainer
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val Surface          = c.surface
+    val SurfaceLowest    = c.surfaceLowest
+    val SurfaceLow       = c.surfaceLow
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+    val SurfaceContainerLowest = c.surfaceLowest
+    val SurfaceContainerLow    = c.surfaceLow
+    val SurfaceContainerHigh   = c.surfaceHigh
+    val ErrorColor             = Color(0xFFBA1A1A)
+
     val context       = LocalContext.current
     val group         by viewModel.group.collectAsStateWithLifecycle()
     val members       by viewModel.members.collectAsStateWithLifecycle()
-    val expenses      by viewModel.expenses.collectAsStateWithLifecycle()
-    val settlements   by viewModel.settlements.collectAsStateWithLifecycle()
-    val yourBalance   by viewModel.yourBalance.collectAsStateWithLifecycle()
-    val totalSpending by viewModel.totalSpending.collectAsStateWithLifecycle()
     val isAdmin       by viewModel.isAdmin.collectAsStateWithLifecycle()
     val groupDeleted  by viewModel.groupDeleted.collectAsStateWithLifecycle()
     val addableContacts   by viewModel.addableContacts.collectAsStateWithLifecycle()
     val invitableContacts by viewModel.invitableContacts.collectAsStateWithLifecycle()
     val isLoadingContacts by viewModel.isLoadingContacts.collectAsStateWithLifecycle()
+    val spaces        by spaceVm.spaces.collectAsStateWithLifecycle()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
-    var showSheet        by remember { mutableStateOf(false) }
-    var showEditDialog   by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var showMembersSheet by remember { mutableStateOf(false) }
+    var showSheet           by remember { mutableStateOf(false) }
+    var showEditDialog      by remember { mutableStateOf(false) }
+    var showDeleteDialog    by remember { mutableStateOf(false) }
+    var showLeaveDialog     by remember { mutableStateOf(false) }
+    var showLeaveBlocked    by remember { mutableStateOf(false) }
+    var showMembersSheet    by remember { mutableStateOf(false) }
     var showAddMemberSheet by remember { mutableStateOf(false) }
     var editedName       by remember { mutableStateOf("") }
     var editedEmoji      by remember { mutableStateOf("") }
     var memberToRemove   by remember { mutableStateOf<GroupMember?>(null) }
-    var expenseToDelete  by remember { mutableStateOf<com.splitpay.data.model.Expense?>(null) }
     var searchQuery      by remember { mutableStateOf("") }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -112,30 +115,9 @@ fun GroupDetailScreen(
     }
 
     LaunchedEffect(groupDeleted) { if (groupDeleted) onNavigateBack() }
-    LaunchedEffect(groupId) { viewModel.loadGroup(groupId) }
-
-    // ── Delete expense dialog ─────────────────────────────────────────────────
-    expenseToDelete?.let { expense ->
-        AlertDialog(
-            onDismissRequest = { expenseToDelete = null },
-            containerColor = SurfaceContainerLowest,
-            shape = RoundedCornerShape(24.dp),
-            title = { Text("Delete Expense", fontWeight = FontWeight.Bold, color = ErrorColor, fontSize = 18.sp) },
-            text = { Text("Delete \"${expense.title}\"? This will recalculate all balances.", fontSize = 14.sp, color = OnSurfaceVariant, lineHeight = 20.sp) },
-            confirmButton = {
-                Box(
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background(ErrorColor)
-                        .clickable {
-                            viewModel.deleteExpense(groupId, expense.id) {}
-                            expenseToDelete = null
-                        }
-                        .padding(horizontal = 20.dp, vertical = 10.dp)
-                ) { Text("Delete", color = Color.White, fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { expenseToDelete = null }) { Text("Cancel", color = OnSurfaceVariant) }
-            }
-        )
+    LaunchedEffect(groupId) {
+        viewModel.loadGroup(groupId)
+        spaceVm.loadSpaces(groupId)
     }
 
 
@@ -362,6 +344,44 @@ fun GroupDetailScreen(
         )
     }
 
+    // ── Leave dialog ──────────────────────────────────────────────────────────
+    if (showLeaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showLeaveDialog = false },
+            containerColor = SurfaceContainerLowest, shape = RoundedCornerShape(24.dp),
+            title = { Text("Leave Group", fontWeight = FontWeight.Bold, color = ErrorColor, fontSize = 18.sp) },
+            text = { Text("Are you sure you want to leave \"${group?.name}\"?", fontSize = 14.sp, color = OnSurfaceVariant, lineHeight = 20.sp) },
+            confirmButton = {
+                Box(modifier = Modifier.clip(RoundedCornerShape(50)).background(ErrorColor)
+                    .clickable { showLeaveDialog = false; viewModel.leaveGroup(groupId) }
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) { Text("Leave", color = Color.White, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { showLeaveDialog = false }) { Text("Cancel", color = OnSurfaceVariant) } }
+        )
+    }
+
+    // ── Leave blocked dialog ──────────────────────────────────────────────────
+    if (showLeaveBlocked) {
+        val balance = group?.balance ?: 0.0
+        val message = if (balance < 0)
+            "You owe €${"%.2f".format(-balance)} in this group. Settle your debts before leaving."
+        else
+            "You are owed €${"%.2f".format(balance)} in this group. Collect what you're owed before leaving."
+        AlertDialog(
+            onDismissRequest = { showLeaveBlocked = false },
+            containerColor = SurfaceContainerLowest, shape = RoundedCornerShape(24.dp),
+            title = { Text("Cannot Leave Group", fontWeight = FontWeight.Bold, color = ErrorColor, fontSize = 18.sp) },
+            text = { Text(message, fontSize = 14.sp, color = OnSurfaceVariant, lineHeight = 20.sp) },
+            confirmButton = {
+                TextButton(onClick = { showLeaveBlocked = false }) {
+                    Text("OK", fontWeight = FontWeight.Bold, color = Primary)
+                }
+            },
+            dismissButton = null
+        )
+    }
+
     // ── Remove member dialog ──────────────────────────────────────────────────
     memberToRemove?.let { member ->
         AlertDialog(
@@ -465,7 +485,22 @@ fun GroupDetailScreen(
                     onClick = { scope.launch { sheetState.hide() }.invokeOnCompletion { showSheet = false; showMembersSheet = true } }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
+                SettingsOption(
+                    icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = ErrorColor, modifier = Modifier.size(20.dp)) },
+                    title = "Leave Group",
+                    subtitle = "Remove yourself from this group",
+                    iconBg = ErrorColor.copy(alpha = 0.1f),
+                    titleColor = ErrorColor,
+                    onClick = {
+                        scope.launch { sheetState.hide() }.invokeOnCompletion {
+                            showSheet = false
+                            if ((group?.balance ?: 0.0) != 0.0) showLeaveBlocked = true
+                            else showLeaveDialog = true
+                        }
+                    }
+                )
                 if (isAdmin) {
+                    Spacer(modifier = Modifier.height(10.dp))
                     SettingsOption(icon = { Icon(Icons.Default.Delete, null, tint = ErrorColor, modifier = Modifier.size(20.dp)) }, title = "Delete Group", subtitle = "Permanently remove this group", iconBg = ErrorColor.copy(alpha = 0.1f), titleColor = ErrorColor,
                         onClick = { scope.launch { sheetState.hide() }.invokeOnCompletion { showSheet = false; showDeleteDialog = true } }
                     )
@@ -499,103 +534,210 @@ fun GroupDetailScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("TOTAL SPENDING", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = OnSurfaceVariant.copy(0.7f), letterSpacing = 1.sp)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("$${String.format("%.2f", totalSpending)}", fontSize = 32.sp, fontWeight = FontWeight.Black, color = Primary, letterSpacing = (-1).sp)
                 }
                 Spacer(modifier = Modifier.height(24.dp))
             }
+            // ── Expenses header ───────────────────────────────────────────────────
             item {
-                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(SurfaceContainerLowest).padding(20.dp)) {
-                        Column {
-                            Text("YOUR STATUS", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = OnSurfaceVariant.copy(0.7f), letterSpacing = 1.sp)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Box(modifier = Modifier.width(5.dp).height(44.dp).clip(RoundedCornerShape(3.dp)).background(if (yourBalance >= 0) Secondary else Tertiary))
-                                Column {
-                                    Text(if (yourBalance >= 0) "You are owed $${String.format("%.2f", yourBalance)}" else "You owe $${String.format("%.2f", -yourBalance)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Primary)
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(if (yourBalance >= 0) "Settlement pending from ${settlements.size} members" else "Settle up to clear your balance", fontSize = 12.sp, color = if (yourBalance >= 0) Secondary else Tertiary, fontWeight = FontWeight.Medium)
-                                }
-                            }
-                        }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "EXPENSES",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = OnSurfaceVariant.copy(alpha = 0.7f),
+                        letterSpacing = 1.5.sp
+                    )
+                    if (spaces.isNotEmpty()) {
+                        Text(
+                            "${spaces.size}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Primary
+                        )
                     }
-                    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Primary).padding(16.dp)) {
-                        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.SpaceBetween) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("💡", fontSize = 18.sp)
-                                Text("INSIGHTS", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(0.7f), letterSpacing = 1.sp)
-                            }
-                            Spacer(modifier = Modifier.height(24.dp))
-                            Text("Top spender", fontSize = 11.sp, color = Color.White.copy(0.7f))
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(group?.members?.firstOrNull() ?: "", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(32.dp))
-            }
-            item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Expense Timeline", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Primary)
-                    TextButton(onClick = {}) { Text("Filter", fontSize = 13.sp, color = Primary, fontWeight = FontWeight.SemiBold) }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
             }
-            items(expenses) { expense ->
-                ExpenseItem(
-                    expense   = expense,
-                    onTap     = { onNavigateToExpenseDetail(groupId, expense.id) },
-                    onEdit    = if (isAdmin) { { onNavigateToEditExpense(groupId, expense.id) } } else null,
-                    onDelete  = if (isAdmin) { { expenseToDelete = expense } } else null
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-            if (settlements.isNotEmpty()) {
+
+            // ── Expense cards ─────────────────────────────────────────────────────
+            if (spaces.isEmpty()) {
                 item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Settlement Breakdown", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Primary)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(SurfaceContainerLow).padding(20.dp)) {
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            settlements.forEach { SettlementRow(settlement = it) }
-                            HorizontalDivider(color = OutlineVariant.copy(0.2f))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("ℹ️", fontSize = 14.sp); Spacer(modifier = Modifier.width(8.dp))
-                                Text("Net balance includes all pending transfers", fontSize = 12.sp, color = OnSurfaceVariant, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
-                            }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(SurfaceContainerLowest)
+                            .padding(28.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("🗂️", fontSize = 36.sp)
+                            Text("No expenses yet", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Primary)
+                            Text("Tap + to create a shared expense", fontSize = 13.sp, color = OnSurfaceVariant)
                         }
                     }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            } else {
+                items(spaces) { space ->
+                    ExpenseCard(space = space, onClick = { onNavigateToExpense(space.id) })
+                    Spacer(modifier = Modifier.height(10.dp))
                 }
             }
+
         }
 
         Box(modifier = Modifier.fillMaxWidth().background(SurfaceContainerLowest).windowInsetsPadding(WindowInsets.statusBars).height(70.dp).align(Alignment.TopCenter)) {
             Row(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onNavigateBack) { Icon(Icons.Default.ArrowBack, null, tint = Primary) }
+                IconButton(onClick = onNavigateBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Primary) }
                 Text(group?.name ?: "", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Primary)
                 IconButton(onClick = { showSheet = true }) { Icon(Icons.Default.Settings, null, tint = Primary) }
             }
         }
 
-        Box(modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 110.dp).size(60.dp)
-            .shadow(8.dp, RoundedCornerShape(18.dp), spotColor = Primary.copy(0.3f))
-            .clip(RoundedCornerShape(18.dp)).background(Brush.linearGradient(listOf(Primary, PrimaryContainer)))
-            .clickable { onNavigateToAddExpense(groupId) }, contentAlignment = Alignment.Center
+        // FAB — Create new Expense
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 24.dp, bottom = 32.dp)
+                .size(60.dp)
+                .shadow(8.dp, RoundedCornerShape(18.dp), spotColor = Primary.copy(0.3f))
+                .clip(RoundedCornerShape(18.dp))
+                .background(Brush.linearGradient(listOf(Primary, PrimaryContainer)))
+                .clickable { onNavigateToCreateExpense() },
+            contentAlignment = Alignment.Center
         ) { Icon(Icons.Default.Add, null, tint = Color.White, modifier = Modifier.size(28.dp)) }
+    }
+}
 
-        Box(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp)) {
-            Box(modifier = Modifier.fillMaxWidth().shadow(16.dp, RoundedCornerShape(28.dp), ambientColor = Primary.copy(0.08f)).clip(RoundedCornerShape(28.dp)).background(SurfaceContainerLowest).padding(horizontal = 20.dp, vertical = 14.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column {
-                        Text("BALANCE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = OnSurfaceVariant, letterSpacing = 1.sp)
-                        Text(if (yourBalance >= 0) "+$${String.format("%.2f", yourBalance)}" else "-$${String.format("%.2f", -yourBalance)}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = if (yourBalance >= 0) Secondary else Tertiary)
-                    }
-                    Box(modifier = Modifier.clip(RoundedCornerShape(50)).background(Brush.linearGradient(listOf(Primary, PrimaryContainer))).clickable { onNavigateToSettlement(groupId) }.padding(horizontal = 24.dp, vertical = 14.dp), contentAlignment = Alignment.Center) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("💳", fontSize = 16.sp); Text("Settle Up", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+// ── Expense Card ──────────────────────────────────────────────────────────────
+@Composable
+private fun ExpenseCard(space: SpaceResponse, onClick: () -> Unit) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val PrimaryContainer = c.primaryContainer
+    val Secondary        = c.secondary
+    val Tertiary         = c.tertiary
+    val SurfaceLowest    = c.surfaceLowest
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+    val ErrorColor       = Color(0xFFBA1A1A)
+    val SurfaceContainerLowest = c.surfaceLowest
+
+    val statusColor = when (space.status) {
+        "active"    -> Secondary
+        "settling"  -> Primary
+        "settled"   -> Secondary
+        "cancelled" -> ErrorColor
+        "suspended" -> Color(0xFFE65100)
+        else        -> OnSurfaceVariant
+    }
+    val needsResponse = space.myAcceptanceStatus == "pending" && space.status == "pending_acceptance"
+    val needsQuorum   = space.myQuorumStatus == "pending"
+    val actionColor   = if (needsQuorum) Primary else Color(0xFFE65100)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(SurfaceContainerLowest)
+            .then(
+                if (needsResponse || needsQuorum)
+                    Modifier.border(1.5.dp, actionColor.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                else Modifier
+            )
+            .clickable(onClick = onClick)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            // ── Accent bar gauche ─────────────────────────────────────────
+            if (needsResponse || needsQuorum) {
+                Box(
+                    modifier = Modifier
+                        .width(4.dp)
+                        .fillMaxHeight()
+                        .background(actionColor, RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp))
+                )
+            }
+
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // ── Corps principal ───────────────────────────────────────
+                Row(
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = if (needsResponse || needsQuorum) 16.dp else 20.dp, end = 20.dp, top = 20.dp, bottom = 20.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(space.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = OnSurface)
+                        Text(SpaceViewModel.categoryLabel(space.category), fontSize = 12.sp, color = OnSurfaceVariant)
+                        Spacer(Modifier.height(2.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(statusColor.copy(alpha = 0.1f))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(SpaceViewModel.statusLabel(space.status), fontSize = 11.sp, color = statusColor, fontWeight = FontWeight.SemiBold)
                         }
+                        space.dueDate?.let {
+                            Text("Due ${it.take(10)}", fontSize = 11.sp, color = OutlineVariant, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            "€%.2f".format(space.totalAmount),
+                            fontWeight = FontWeight.Black,
+                            fontSize = 20.sp,
+                            color = Primary,
+                            letterSpacing = (-0.5).sp
+                        )
+                        Text("${space.participants.size} members", fontSize = 11.sp, color = OnSurfaceVariant)
+                        space.myShare?.let {
+                            Spacer(Modifier.height(4.dp))
+                            Text("YOUR SHARE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = OutlineVariant, letterSpacing = 0.8.sp)
+                            Text("€%.2f".format(it), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = OnSurface)
+                        }
+                    }
+                }
+
+                // ── Bandeau d'action ──────────────────────────────────────
+                if (needsResponse || needsQuorum) {
+                    HorizontalDivider(color = actionColor.copy(alpha = 0.12f))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(actionColor.copy(alpha = 0.06f))
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(if (needsQuorum) "⚠️" else "🔔", fontSize = 14.sp)
+                            Text(
+                                if (needsQuorum) "Confirm quorum required" else "Your response is needed",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = actionColor
+                            )
+                        }
+                        Text("Tap to respond →", fontSize = 11.sp, color = actionColor.copy(alpha = 0.7f), fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -606,6 +748,13 @@ fun GroupDetailScreen(
 // ── Addable Contact Row ───────────────────────────────────────────────────────
 @Composable
 private fun AddableContactRow(contact: AddableContact, onAdd: () -> Unit) {
+    val c = LocalAppColors.current
+    val Primary          = c.primary
+    val Secondary        = c.secondary
+    val SurfaceContainerLowest = c.surfaceLowest
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+
     var added by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(SurfaceContainerLowest).padding(16.dp),
@@ -634,6 +783,13 @@ private fun AddableContactRow(contact: AddableContact, onAdd: () -> Unit) {
 // ── Invitable Contact Row ─────────────────────────────────────────────────────
 @Composable
 private fun InvitableContactRow(contact: InvitableContact, onInvite: () -> Unit) {
+    val c = LocalAppColors.current
+    val Secondary        = c.secondary
+    val SurfaceContainerLowest = c.surfaceLowest
+    val OnSurface        = c.onSurface
+    val OnSurfaceVariant = c.onSurfaceVariant
+    val OutlineVariant   = c.outlineVariant
+
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(SurfaceContainerLowest).padding(16.dp),
         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
@@ -655,7 +811,11 @@ private fun InvitableContactRow(contact: InvitableContact, onInvite: () -> Unit)
 
 // ── Settings Option ───────────────────────────────────────────────────────────
 @Composable
-private fun SettingsOption(icon: @Composable () -> Unit, title: String, subtitle: String, iconBg: Color, titleColor: Color = OnSurface, onClick: () -> Unit) {
+private fun SettingsOption(icon: @Composable () -> Unit, title: String, subtitle: String, iconBg: Color, titleColor: Color = Color(0xFF1A1C1E), onClick: () -> Unit) {
+    val c = LocalAppColors.current
+    val SurfaceContainerLow = c.surfaceLow
+    val OnSurfaceVariant    = c.onSurfaceVariant
+
     Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(SurfaceContainerLow).clickable { onClick() }.padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(iconBg), contentAlignment = Alignment.Center) { icon() }
@@ -664,75 +824,5 @@ private fun SettingsOption(icon: @Composable () -> Unit, title: String, subtitle
     }
 }
 
-// ── Expense Item ──────────────────────────────────────────────────────────────
-private val categoryEmoji = mapOf(
-    "food" to "🍕", "transport" to "🚗", "accommodation" to "🏠",
-    "entertainment" to "🎮", "shopping" to "🛒", "health" to "💊",
-    "utilities" to "💡", "other" to "📦"
-)
 
-@Composable
-fun ExpenseItem(expense: Expense, onTap: () -> Unit = {}, onEdit: (() -> Unit)? = null, onDelete: (() -> Unit)? = null) {
-    val accentColor = when { expense.yourShare > 0 -> Secondary; expense.yourShare < 0 -> TertiaryFixedDim; else -> OutlineVariant }
-    val shareText = when { expense.yourShare > 0 -> "You get back $${String.format("%.2f", expense.yourShare)}"; expense.yourShare < 0 -> "You owe $${String.format("%.2f", -expense.yourShare)}"; else -> "Settled" }
-    val shareColor = when { expense.yourShare > 0 -> Secondary; expense.yourShare < 0 -> Tertiary; else -> OnSurfaceVariant }
-    val emoji = categoryEmoji[expense.category.lowercase()] ?: "📦"
-
-    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(SurfaceContainerLowest).clickable { onTap() }.padding(16.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.weight(1f)) {
-                Box(modifier = Modifier.width(4.dp).height(40.dp).clip(RoundedCornerShape(2.dp)).background(accentColor))
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(emoji, fontSize = 13.sp)
-                        Text(expense.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = OnSurface)
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text("${expense.date} • Paid by ${expense.paidBy}", fontSize = 12.sp, color = OnSurfaceVariant)
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("$${String.format("%.2f", expense.amount)}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Primary)
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(shareText.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = shareColor, letterSpacing = 0.5.sp)
-                }
-                if (onEdit != null) {
-                    Box(
-                        modifier = Modifier.size(30.dp).clip(CircleShape)
-                            .background(Primary.copy(alpha = 0.08f))
-                            .clickable { onEdit() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Primary, modifier = Modifier.size(15.dp))
-                    }
-                }
-                if (onDelete != null) {
-                    Box(
-                        modifier = Modifier.size(30.dp).clip(CircleShape)
-                            .background(ErrorColor.copy(alpha = 0.08f))
-                            .clickable { onDelete() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = ErrorColor, modifier = Modifier.size(15.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ── Settlement Row ────────────────────────────────────────────────────────────
-@Composable
-fun SettlementRow(settlement: Settlement) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(modifier = Modifier.size(32.dp).clip(CircleShape).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
-                Text(settlement.memberName.firstOrNull()?.toString() ?: "?", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Primary)
-            }
-            Text(if (settlement.owesYou) "${settlement.memberName} owes you" else "You owe ${settlement.memberName}", fontWeight = FontWeight.Medium, fontSize = 14.sp, color = OnSurface)
-        }
-        Text("$${String.format("%.2f", settlement.amount)}", fontWeight = FontWeight.Black, fontSize = 15.sp, color = if (settlement.owesYou) Secondary else Tertiary)
-    }
-}
 
