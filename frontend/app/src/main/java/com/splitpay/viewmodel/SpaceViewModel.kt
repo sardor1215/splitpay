@@ -36,6 +36,20 @@ class SpaceViewModel(app: Application) : AndroidViewModel(app) {
     private val _snackbar = MutableStateFlow<String?>(null)
     val snackbar: StateFlow<String?> = _snackbar
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
+    fun refresh(groupId: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            runCatching { api.getSpaces(groupId) }
+                .onSuccess { r ->
+                    if (r.isSuccessful) _spaces.value = r.body() ?: emptyList()
+                }
+            _isLoading.value = false
+        }
+    }
+
     // ── Charger la liste des espaces d'un groupe ──────────────────────────
     fun loadSpaces(groupId: String) {
         viewModelScope.launch {

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -91,6 +92,7 @@ fun HomeScreen(
     val totalOwe   = groups.filter { it.balance < 0 }.sumOf { -it.balance }
     var selectedTab by remember { mutableIntStateOf(0) }
 
+    val isLoading           by homeViewModel.isLoading.collectAsStateWithLifecycle()
     val context             = LocalContext.current
     val contacts            by homeViewModel.splitPayContacts.collectAsStateWithLifecycle()
     val isLoadingContacts   by homeViewModel.isLoadingContacts.collectAsStateWithLifecycle()
@@ -195,6 +197,11 @@ fun HomeScreen(
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
 
         // ── Main content ──────────────────────────────────────────────────
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = { homeViewModel.fetchGroups() },
+            modifier = Modifier.fillMaxSize()
+        ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -331,6 +338,7 @@ fun HomeScreen(
             }
 
         }
+        } // end PullToRefreshBox
 
         // ── Glass Top App Bar ─────────────────────────────────────────────
         Box(

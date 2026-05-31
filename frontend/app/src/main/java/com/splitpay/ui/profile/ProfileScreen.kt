@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.KeyboardType
@@ -76,6 +77,7 @@ fun ProfileScreen(
     val pendingInvitations by viewModel.pendingInvitations.collectAsStateWithLifecycle()
     val payments           by viewModel.payments.collectAsStateWithLifecycle()
     val accountBalance     by viewModel.accountBalance.collectAsStateWithLifecycle()
+    val isLoading          by viewModel.isLoading.collectAsStateWithLifecycle()
 
     val initials = userName.split(" ")
         .mapNotNull { it.firstOrNull()?.toString() }
@@ -192,6 +194,11 @@ fun ProfileScreen(
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
 
         // ── Scrollable content ────────────────────────────────────────────
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = { viewModel.refresh() },
+            modifier = Modifier.fillMaxSize()
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -682,6 +689,7 @@ fun ProfileScreen(
                 textAlign = TextAlign.Center
             )
         }
+        } // end PullToRefreshBox
 
         // ── Header ────────────────────────────────────────────────────────
         Box(

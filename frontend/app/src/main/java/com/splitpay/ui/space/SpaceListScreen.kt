@@ -10,10 +10,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +41,7 @@ private val OnSurface             = Color(0xFF1A1C1E)
 private val OnSurfaceVariant      = Color(0xFF3F4949)
 private val OutlineVariant        = Color(0xFFBEC8C9)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SpaceListScreen(
     groupId: String,
@@ -47,13 +50,19 @@ fun SpaceListScreen(
     onCreateSpace: () -> Unit,
     vm: SpaceViewModel = viewModel()
 ) {
-    val spaces  by vm.spaces.collectAsStateWithLifecycle()
-    val uiState by vm.uiState.collectAsStateWithLifecycle()
+    val spaces     by vm.spaces.collectAsStateWithLifecycle()
+    val uiState    by vm.uiState.collectAsStateWithLifecycle()
+    val isLoading  by vm.isLoading.collectAsStateWithLifecycle()
 
     LaunchedEffect(groupId) { vm.loadSpaces(groupId) }
 
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
 
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = { vm.refresh(groupId) },
+            modifier = Modifier.fillMaxSize()
+        ) {
         when {
             uiState is SpaceUiState.Loading && spaces.isEmpty() -> {
                 CircularProgressIndicator(
@@ -125,6 +134,7 @@ fun SpaceListScreen(
                 }
             }
         }
+        } // end PullToRefreshBox
 
         // ── Top Bar ───────────────────────────────────────────────────────────
         Box(

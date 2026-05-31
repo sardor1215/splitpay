@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,6 +88,7 @@ fun GroupDetailScreen(
     val group         by viewModel.group.collectAsStateWithLifecycle()
     val members       by viewModel.members.collectAsStateWithLifecycle()
     val isAdmin       by viewModel.isAdmin.collectAsStateWithLifecycle()
+    val isLoading     by viewModel.isLoading.collectAsStateWithLifecycle()
     val groupDeleted  by viewModel.groupDeleted.collectAsStateWithLifecycle()
     val addableContacts   by viewModel.addableContacts.collectAsStateWithLifecycle()
     val invitableContacts by viewModel.invitableContacts.collectAsStateWithLifecycle()
@@ -511,6 +513,11 @@ fun GroupDetailScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = { viewModel.refresh(groupId) },
+            modifier = Modifier.fillMaxSize()
+        ) {
         LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp), contentPadding = PaddingValues(top = 140.dp, bottom = 160.dp)) {
             item {
                 Spacer(modifier = Modifier.height(16.dp))
@@ -594,6 +601,7 @@ fun GroupDetailScreen(
             }
 
         }
+        } // end PullToRefreshBox
 
         Box(modifier = Modifier.fillMaxWidth().background(SurfaceContainerLowest).windowInsetsPadding(WindowInsets.statusBars).height(70.dp).align(Alignment.TopCenter)) {
             Row(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

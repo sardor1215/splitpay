@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +56,7 @@ private fun formatActivity(iso: String): String {
     } catch (_: Exception) { "RECENTLY" }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupsScreen(
     onNavigateToHome: () -> Unit,
@@ -78,6 +80,7 @@ fun GroupsScreen(
 
     val groups       by viewModel.groups.collectAsStateWithLifecycle()
     val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
+    val isLoading    by viewModel.isLoading.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
     var searchActive by remember { mutableStateOf(false) }
 
@@ -102,6 +105,11 @@ fun GroupsScreen(
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
 
         // ── Content ───────────────────────────────────────────────────────
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = { viewModel.fetchGroups() },
+            modifier = Modifier.fillMaxSize()
+        ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -157,6 +165,7 @@ fun GroupsScreen(
                 }
             }
         }
+        } // end PullToRefreshBox
 
         // ── Header ────────────────────────────────────────────────────────
         Column(

@@ -62,6 +62,9 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val _accountBalance = MutableStateFlow(0.0)
     val accountBalance: StateFlow<Double> = _accountBalance
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
     private val _splitPayContacts  = MutableStateFlow<List<AddableContact>>(emptyList())
     val splitPayContacts: StateFlow<List<AddableContact>> = _splitPayContacts
 
@@ -69,6 +72,14 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     val isLoadingContacts: StateFlow<Boolean> = _isLoadingContacts
 
     init { loadProfile() }
+
+    fun refresh() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            doLoadProfile()
+            _isLoading.value = false
+        }
+    }
 
     fun loadSplitPayContacts(cr: ContentResolver) {
         if (_splitPayContacts.value.isNotEmpty()) return  // already loaded
@@ -108,31 +119,33 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun loadProfile() {
-        viewModelScope.launch {
-            runCatching { api.getProfile() }.onSuccess { r ->
-                if (r.isSuccessful) {
-                    val body = r.body()!!
-                    _userName.value       = body.name
-                    _userEmail.value      = body.email
-                    _userPhone.value      = body.phone ?: ""
-                    _isAdmin.value        = body.isAdmin
-                    _kycStatus.value      = body.kycStatus ?: "none"
-                    _requireConsent.value  = body.requireConsent
-                    _accountBalance.value  = body.accountBalance
-                    tokenManager.userName  = body.name
-                    tokenManager.userEmail = body.email
-                }
+        viewModelScope.launch { doLoadProfile() }
+    }
+
+    private suspend fun doLoadProfile() {
+        runCatching { api.getProfile() }.onSuccess { r ->
+            if (r.isSuccessful) {
+                val body = r.body()!!
+                _userName.value       = body.name
+                _userEmail.value      = body.email
+                _userPhone.value      = body.phone ?: ""
+                _isAdmin.value        = body.isAdmin
+                _kycStatus.value      = body.kycStatus ?: "none"
+                _requireConsent.value  = body.requireConsent
+                _accountBalance.value  = body.accountBalance
+                tokenManager.userName  = body.name
+                tokenManager.userEmail = body.email
             }
-            val groups = AppCache.groups
-            if (groups != null) {
-                _totalBalance.value = groups.sumOf { it.balance }
-                _groupCount.value   = groups.size
-            }
-            runCatching { api.getPaymentHistory() }.onSuccess { r ->
-                if (r.isSuccessful) _payments.value = r.body().orEmpty()
-            }
-            loadInvitations()
         }
+        val groups = AppCache.groups
+        if (groups != null) {
+            _totalBalance.value = groups.sumOf { it.balance }
+            _groupCount.value   = groups.size
+        }
+        runCatching { api.getPaymentHistory() }.onSuccess { r ->
+            if (r.isSuccessful) _payments.value = r.body().orEmpty()
+        }
+        loadInvitations()
     }
 
     fun loadInvitations() {

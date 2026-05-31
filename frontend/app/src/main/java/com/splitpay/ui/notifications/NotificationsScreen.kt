@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +30,7 @@ import com.splitpay.viewmodel.SpaceViewModel
 
 private val Amber = Color(0xFFE65100)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationsScreen(
     onNavigateBack: () -> Unit,
@@ -55,6 +57,11 @@ fun NotificationsScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
 
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = { viewModel.refresh() },
+            modifier = Modifier.fillMaxSize()
+        ) {
         if (isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Primary)
@@ -118,6 +125,7 @@ fun NotificationsScreen(
                 }
             }
         }
+        } // end PullToRefreshBox
 
         // ── Header ────────────────────────────────────────────────────────
         Box(

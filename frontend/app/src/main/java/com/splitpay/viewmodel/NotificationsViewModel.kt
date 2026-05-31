@@ -27,6 +27,8 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
 
     init { load() }
 
+    fun refresh() { load() }
+
     fun load() {
         viewModelScope.launch {
             _isLoading.value = true
