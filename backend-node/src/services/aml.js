@@ -38,6 +38,13 @@ async function checkExpense(expenseId, userId, amount, groupId) {
   await applyActions(result, userId, amount, expenseId, null);
 }
 
+// ── Monitoring post-paiement P2P (asynchrone, non-bloquant) ──────────────────
+async function checkPayment(userId, amount, paymentId) {
+  const result = await evaluate(userId, parseFloat(amount), null, null);
+  // expenseId=null, spaceId=null, paymentId=paymentId — keeps P2P alerts distinct
+  await applyActions(result, userId, amount, null, null, paymentId);
+}
+
 // ── Moteur de règles R1–R18 ──────────────────────────────────────────────────
 async function evaluate(userId, amt, groupId, spaceId) {
   const user = (await query('SELECT * FROM users WHERE id = $1', [userId])).rows[0];
@@ -145,30 +152,42 @@ async function evaluate(userId, amt, groupId, spaceId) {
 }
 
 // ── Application des actions AML ──────────────────────────────────────────────
-async function applyActions(result, userId, amount, expenseId, spaceId) {
+// paymentId is set for direct P2P transfers; expenseId for space-related alerts
+async function applyActions(result, userId, amount, expenseId, spaceId, paymentId = null) {
   const { ruleId, action, flags = {} } = result;
 
   // Créer une alerte AML
-  await createAlert(userId, ruleId, result.reason, amount, expenseId, spaceId, action);
+  await createAlert(userId, ruleId, result.reason, amount, expenseId, spaceId, action, paymentId);
+
+  const { notifyAdmins } = require('./fcm');
 
   // Geler le compte
   if (flags.freeze) {
     await query('UPDATE users SET account_frozen = true, frozen_at = NOW(), aml_status = $1 WHERE id = $2',
       ['suspended', userId]);
-    const { notifyAdmins } = require('./fcm');
     const u = (await query('SELECT name FROM users WHERE id = $1', [userId])).rows[0];
     notifyAdmins('Account frozen — AML',
       `${u?.name || userId} frozen by rule ${ruleId}: ${result.reason}`,
-      { userId, type: 'aml_freeze', rule: ruleId }).catch(() => {});
+      { userId, type: 'aml_freeze', rule: ruleId, paymentId }).catch(() => {});
   }
 
   // Soumettre un SAR
   if (flags.sar) {
     await query(
-      'INSERT INTO sar_reports (user_id, rule, reason, amount, expense_id, space_id) VALUES ($1,$2,$3,$4,$5,$6)',
-      [userId, ruleId, result.reason, amount, expenseId || null, spaceId || null]
+      'INSERT INTO sar_reports (user_id, rule, reason, amount, expense_id, space_id, payment_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [userId, ruleId, result.reason, amount, expenseId || null, spaceId || null, paymentId || null]
     );
-    console.warn(`[AML] SAR submitted — Rule ${ruleId} — User ${userId}`);
+    console.warn(`[AML] SAR submitted — Rule ${ruleId} — User ${userId}${paymentId ? ` — Payment ${paymentId}` : ''}`);
+  }
+
+  // Notifier les admins pour toute transaction P2P suspecte (ALERT ou BLOCK non-freeze)
+  if (paymentId && action !== 'ALLOW') {
+    const u = (await query('SELECT name FROM users WHERE id = $1', [userId])).rows[0];
+    notifyAdmins(
+      action === 'BLOCK' ? 'P2P Payment Blocked — AML' : 'Suspicious P2P Transaction',
+      `${u?.name || userId}: €${parseFloat(amount).toFixed(2)} transfer — Rule ${ruleId}: ${result.reason}`,
+      { userId, type: 'suspicious_payment', rule: ruleId, action, paymentId }
+    ).catch(() => {});
   }
 
   // Escalade auto-suspension
@@ -179,13 +198,18 @@ async function applyActions(result, userId, amount, expenseId, spaceId) {
 async function detectUnusualPattern(userId, amt, groupId) {
   const windowStart = new Date(Date.now() - config.highFrequencyWindowHours * 3_600_000);
 
-  // Vélocité anormale sur les paiements
-  const freq = await query(
-    `SELECT COUNT(*) FROM payments p
-     JOIN spaces s ON s.id = p.space_id
-     WHERE p.from_user = $1 AND s.group_id = $2 AND p.paid_at >= $3`,
-    [userId, groupId, windowStart]
-  );
+  // Vélocité anormale — P2P (groupId null) : tous les paiements ; espace : dans le groupe
+  const freq = groupId
+    ? await query(
+        `SELECT COUNT(*) FROM payments p
+         JOIN spaces s ON s.id = p.space_id
+         WHERE p.from_user = $1 AND s.group_id = $2 AND p.paid_at >= $3`,
+        [userId, groupId, windowStart]
+      )
+    : await query(
+        `SELECT COUNT(*) FROM payments WHERE from_user = $1 AND paid_at >= $2`,
+        [userId, windowStart]
+      );
   if (parseInt(freq.rows[0].count) >= config.highFrequencyCount) return true;
 
   // Montants ronds suspects
@@ -204,12 +228,18 @@ async function detectUnusualPattern(userId, amt, groupId) {
 // ── Détection smurfing (basé sur les paiements réels) ────────────────────────
 async function detectSmurfing(userId, groupId) {
   const windowStart = new Date(Date.now() - config.smurfingWindowHours * 3_600_000);
-  const res = await query(
-    `SELECT COUNT(*) FROM payments p
-     JOIN spaces s ON s.id = p.space_id
-     WHERE p.from_user = $1 AND s.group_id = $2 AND p.paid_at >= $3 AND p.amount < $4`,
-    [userId, groupId, windowStart, config.sddThreshold]
-  );
+  const res = groupId
+    ? await query(
+        `SELECT COUNT(*) FROM payments p
+         JOIN spaces s ON s.id = p.space_id
+         WHERE p.from_user = $1 AND s.group_id = $2 AND p.paid_at >= $3 AND p.amount < $4`,
+        [userId, groupId, windowStart, config.sddThreshold]
+      )
+    : await query(
+        `SELECT COUNT(*) FROM payments
+         WHERE from_user = $1 AND paid_at >= $2 AND amount < $3`,
+        [userId, windowStart, config.sddThreshold]
+      );
   return parseInt(res.rows[0].count) >= config.smurfingMinTransactions;
 }
 
@@ -245,10 +275,12 @@ async function checkEscalation(userId) {
 }
 
 // ── Créer alerte AML ──────────────────────────────────────────────────────────
-async function createAlert(userId, alertType, description, amount, expenseId, spaceId, action) {
+async function createAlert(userId, alertType, description, amount, expenseId, spaceId, action, paymentId = null) {
   await query(
-    'INSERT INTO aml_alerts (id, user_id, alert_type, description, amount, expense_id, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())',
-    [uuidv4(), userId, alertType, description, amount, expenseId || null, 'pending']
+    `INSERT INTO aml_alerts
+       (id, user_id, alert_type, description, amount, expense_id, payment_id, status, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())`,
+    [uuidv4(), userId, alertType, description, amount, expenseId || null, paymentId || null, 'pending']
   );
   if (action !== 'ALLOW' && action !== 'SDD') {
     await query("UPDATE users SET aml_status = 'flagged' WHERE id = $1 AND aml_status = 'clear'", [userId]);
@@ -264,4 +296,4 @@ function updateConfig(newCfg) {
   Object.assign(config, newCfg);
 }
 
-module.exports = { preCheck, checkExpense, createAlert, updateConfig, config };
+module.exports = { preCheck, checkExpense, checkPayment, createAlert, updateConfig, config };

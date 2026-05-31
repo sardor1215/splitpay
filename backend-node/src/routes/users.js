@@ -126,10 +126,10 @@ router.post('/users/fcm-token', async (req, res) => {
   res.json({ message: 'FCM token registered' });
 });
 
-// POST /me/pay — Direct user-to-user payment (AML-gated, atomic)
+// POST /me/pay — Direct P2P payment — AML R1–R18, KYC, frozen/suspended checks
 router.post('/me/pay', async (req, res) => {
   const { toUserId, amount, note } = req.body;
-  const { preCheck } = require('../services/aml');
+  const { preCheck, checkPayment } = require('../services/aml');
   const { notifyUser } = require('../services/fcm');
 
   if (!toUserId) return res.status(400).json({ message: 'Recipient is required' });
@@ -138,32 +138,59 @@ router.post('/me/pay', async (req, res) => {
   if (toUserId === req.userId) return res.status(400).json({ message: 'Cannot pay yourself' });
 
   const [senderRes, recipientRes] = await Promise.all([
-    query('SELECT account_balance, name FROM users WHERE id = $1 AND is_deleted = false', [req.userId]),
-    query('SELECT id, name FROM users WHERE id = $1 AND is_deleted = false', [toUserId]),
+    query(
+      'SELECT account_balance, name, aml_status, account_frozen, kyc_status FROM users WHERE id = $1 AND is_deleted = false',
+      [req.userId]
+    ),
+    query(
+      'SELECT id, name, aml_status, account_frozen FROM users WHERE id = $1 AND is_deleted = false',
+      [toUserId]
+    ),
   ]);
   const sender    = senderRes.rows[0];
   const recipient = recipientRes.rows[0];
   if (!recipient) return res.status(404).json({ message: 'Recipient not found' });
+
+  // ── Compliance: sender ────────────────────────────────────────────────────
+  if (sender.account_frozen)
+    return res.status(403).json({ message: 'Your account is frozen. Please contact support.' });
+  if (sender.aml_status === 'suspended')
+    return res.status(403).json({ message: 'Your account has been suspended due to suspicious activity. Please contact support.' });
+
+  // ── Compliance: recipient ─────────────────────────────────────────────────
+  if (recipient.account_frozen || recipient.aml_status === 'suspended')
+    return res.status(422).json({ message: 'Transfer blocked: recipient account has compliance restrictions.' });
+
+  // ── Balance check ─────────────────────────────────────────────────────────
   if (parseFloat(sender.account_balance) < amt)
     return res.status(400).json({ message: `Insufficient balance. Available: €${parseFloat(sender.account_balance).toFixed(2)}` });
 
+  // ── AML pre-check — same R1–R18 engine as group expenses ─────────────────
+  // groupId=null signals P2P path; detectUnusualPattern/detectSmurfing now
+  // scan all payments (not just group-scoped) when groupId is null.
   const blocked = await preCheck(req.userId, amt, null);
   if (blocked) return res.status(422).json({ message: `Payment blocked by compliance: ${blocked}` });
 
+  // ── Atomic transfer ───────────────────────────────────────────────────────
+  let paymentId;
   try {
     await query('BEGIN');
     await query('UPDATE users SET account_balance = account_balance - $1 WHERE id = $2', [amt, req.userId]);
     await query('UPDATE users SET account_balance = account_balance + $1 WHERE id = $2', [amt, toUserId]);
-    await query(
-      `INSERT INTO payments (from_user, to_user, amount, method, note) VALUES ($1, $2, $3, 'in_app', $4)`,
+    const payRes = await query(
+      `INSERT INTO payments (from_user, to_user, amount, method, note) VALUES ($1, $2, $3, 'in_app', $4) RETURNING id`,
       [req.userId, toUserId, amt, note || null]
     );
+    paymentId = payRes.rows[0].id;
     await query('COMMIT');
   } catch (err) {
     await query('ROLLBACK');
     console.error('[DIRECT PAY] failed:', err.message);
     return res.status(500).json({ message: 'Payment failed. Please try again.' });
   }
+
+  // ── Post-payment AML monitoring (async, non-blocking — same as spaces) ────
+  checkPayment(req.userId, amt, paymentId).catch(() => {});
 
   notifyUser(toUserId, 'Payment received',
     `${sender.name} sent you €${amt.toFixed(2)}${note ? ': ' + note : ''}`,

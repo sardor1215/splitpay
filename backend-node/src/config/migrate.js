@@ -20,10 +20,15 @@ async function runMigrations() {
       amount      NUMERIC(12,2),
       expense_id  UUID,
       space_id    UUID,
+      payment_id  UUID,
       status      VARCHAR(20) DEFAULT 'submitted',
       created_at  TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+
+  // ── P2P payment compliance columns ───────────────────────────────────────
+  await query(`ALTER TABLE aml_alerts   ADD COLUMN IF NOT EXISTS payment_id UUID`);
+  await query(`ALTER TABLE sar_reports  ADD COLUMN IF NOT EXISTS payment_id UUID`);
 
   // ── Espaces ──────────────────────────────────────────────────────────────
   await query(`

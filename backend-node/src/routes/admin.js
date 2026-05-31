@@ -72,7 +72,9 @@ router.get('/aml/alerts', async (req, res) => {
   res.json(result.rows.map(a => ({
     id: a.id, userId: a.user_id, userName: a.user_name, alertType: a.alert_type,
     description: a.description, amount: a.amount ? parseFloat(a.amount) : null,
-    expenseId: a.expense_id, status: a.status, reviewedBy: a.reviewed_by,
+    expenseId: a.expense_id, paymentId: a.payment_id,
+    txType: a.payment_id ? 'direct_payment' : a.expense_id ? 'space_expense' : 'unknown',
+    status: a.status, reviewedBy: a.reviewed_by,
     reviewedAt: a.reviewed_at, createdAt: a.created_at,
   })));
 });

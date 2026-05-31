@@ -1,8 +1,5 @@
 package com.splitpay.ui.profile
 
-import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,9 +13,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.AttachMoney
-import androidx.compose.material.icons.filled.North
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Brightness4
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -27,15 +23,10 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,7 +41,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.ui.theme.LocalAppColors
-import com.splitpay.viewmodel.AddableContact
 import com.splitpay.viewmodel.ProfileViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,14 +77,6 @@ fun ProfileScreen(
     val payments           by viewModel.payments.collectAsStateWithLifecycle()
     val accountBalance     by viewModel.accountBalance.collectAsStateWithLifecycle()
 
-    val context             = LocalContext.current
-    val contacts            by viewModel.splitPayContacts.collectAsStateWithLifecycle()
-    val isLoadingContacts   by viewModel.isLoadingContacts.collectAsStateWithLifecycle()
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) viewModel.loadSplitPayContacts(context.contentResolver) }
-
     val initials = userName.split(" ")
         .mapNotNull { it.firstOrNull()?.toString() }
         .take(2)
@@ -103,9 +85,9 @@ fun ProfileScreen(
     var showEditDialog   by remember { mutableStateOf(false) }
     var editName         by remember { mutableStateOf("") }
     var editPhone        by remember { mutableStateOf("") }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var deleteErrorMsg   by remember { mutableStateOf<String?>(null) }
-    var showSendSheet    by remember { mutableStateOf(false) }
+    var showDeleteDialog  by remember { mutableStateOf(false) }
+    var deleteErrorMsg    by remember { mutableStateOf<String?>(null) }
+    var showHistorySheet  by remember { mutableStateOf(false) }
 
     // ── Edit Profile Dialog ────────────────────────────────────────────────
     if (showEditDialog) {
@@ -527,100 +509,100 @@ fun ProfileScreen(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Brush.linearGradient(listOf(Primary, PrimaryContainer)))
-                            .clickable { showSendSheet = true }
-                            .padding(vertical = 13.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                }
+            }
+
+            // ── Transaction History button ────────────────────────────────
+            Spacer(modifier = Modifier.height(32.dp))
+            SectionHeader(title = "TRANSACTIONS")
+            Spacer(modifier = Modifier.height(12.dp))
+            SettingsItem(
+                icon = Icons.Default.History,
+                title = "Transaction History",
+                subtitle = if (payments.isEmpty()) "No transactions yet"
+                           else "${payments.size} transaction${if (payments.size > 1) "s" else ""}",
+                onClick = { if (payments.isNotEmpty()) showHistorySheet = true },
+                trailingContent = {
+                    Icon(Icons.Default.ChevronRight, contentDescription = null,
+                        tint = OutlineVariant, modifier = Modifier.size(20.dp))
+                }
+            )
+
+            // ── Transaction History sheet ──────────────────────────────────
+            if (showHistorySheet) {
+                ModalBottomSheet(
+                    onDismissRequest = { showHistorySheet = false },
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    containerColor = SurfaceLowest,
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 40.dp)) {
+                        Box(modifier = Modifier.width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp))
+                            .background(OutlineVariant.copy(alpha = 0.4f)).align(Alignment.CenterHorizontally))
+                        Spacer(Modifier.height(20.dp))
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.North, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            Text("Send Money", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-                    }
-                }
-            }
-
-            // ── Send Money Sheet ──────────────────────────────────────────
-            if (showSendSheet) {
-                LaunchedEffect(Unit) {
-                    permissionLauncher.launch(Manifest.permission.READ_CONTACTS)
-                }
-                SendMoneySheet(
-                    availableBalance  = accountBalance,
-                    contacts          = contacts,
-                    isLoadingContacts = isLoadingContacts,
-                    onSendTo = { userId: String, amount: Double, note: String?, onSuccess: (Double) -> Unit, onError: (String) -> Unit ->
-                        viewModel.sendMoney(userId, amount, note, onSuccess, onError)
-                    },
-                    onDismiss = { showSendSheet = false }
-                )
-            }
-
-            // ── Payment History ───────────────────────────────────────────
-            if (payments.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(32.dp))
-                SectionHeader(title = "PAYMENT HISTORY")
-                Spacer(modifier = Modifier.height(12.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    payments.take(10).forEach { payment ->
-                        val isSent     = payment.direction == "sent"
-                        val accentColor = if (isSent) Tertiary else Secondary
-                        val sign        = if (isSent) "-" else "+"
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(SurfaceLowest)
-                                .padding(16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                            Text("Transaction History", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Primary)
+                            Box(
+                                modifier = Modifier.clip(RoundedCornerShape(50))
+                                    .background(Primary.copy(alpha = 0.08f))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    modifier = Modifier.weight(1f)
+                                Text("${payments.size} total", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Primary)
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        LazyColumn(
+                            modifier = Modifier.heightIn(max = 520.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(payments) { payment ->
+                                val isSent      = payment.direction == "sent"
+                                val accentColor = if (isSent) Tertiary else Secondary
+                                val sign        = if (isSent) "-" else "+"
+                                Box(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(SurfaceLow)
+                                        .padding(16.dp)
                                 ) {
-                                    Box(
-                                        modifier = Modifier.size(40.dp).clip(CircleShape)
-                                            .background(accentColor.copy(0.1f)),
-                                        contentAlignment = Alignment.Center
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(if (isSent) "↑" else "↓", fontSize = 18.sp, color = accentColor, fontWeight = FontWeight.Bold)
-                                    }
-                                    Column {
-                                        Text(
-                                            if (isSent) "To ${payment.toName ?: "?"}" else "From ${payment.fromName ?: "?"}",
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 14.sp,
-                                            color = OnSurface
-                                        )
-                                        payment.spaceName?.let {
-                                            Text(it, fontSize = 11.sp, color = OnSurfaceVariant)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier.size(44.dp).clip(CircleShape)
+                                                    .background(accentColor.copy(0.1f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(if (isSent) "↑" else "↓", fontSize = 18.sp, color = accentColor, fontWeight = FontWeight.Bold)
+                                            }
+                                            Column {
+                                                Text(
+                                                    if (isSent) "To ${payment.toName ?: "?"}" else "From ${payment.fromName ?: "?"}",
+                                                    fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = OnSurface
+                                                )
+                                                payment.spaceName?.let {
+                                                    Text(it, fontSize = 11.sp, color = OnSurfaceVariant)
+                                                }
+                                                Text(payment.paidAt.take(10), fontSize = 11.sp, color = OutlineVariant)
+                                            }
                                         }
                                         Text(
-                                            payment.paidAt.take(10),
-                                            fontSize = 11.sp,
-                                            color = OutlineVariant
+                                            "$sign€${String.format("%.2f", payment.amount)}",
+                                            fontWeight = FontWeight.Black, fontSize = 16.sp, color = accentColor
                                         )
                                     }
                                 }
-                                Text(
-                                    "$sign$${String.format("%.2f", payment.amount)}",
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 16.sp,
-                                    color = accentColor
-                                )
                             }
                         }
                     }
@@ -850,277 +832,5 @@ private fun SettingsItem(
             }
         }
         trailingContent()
-    }
-}
-
-// ── Send Money Sheet ──────────────────────────────────────────────────────────
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SendMoneySheet(
-    availableBalance: Double,
-    contacts: List<AddableContact>,
-    isLoadingContacts: Boolean,
-    onSendTo: (toUserId: String, amount: Double, note: String?, onSuccess: (Double) -> Unit, onError: (String) -> Unit) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val c = LocalAppColors.current
-    val Primary          = c.primary
-    val PrimaryContainer = c.primaryContainer
-    val SurfaceLowest    = c.surfaceLowest
-    val SurfaceLow       = c.surfaceLow
-    val OnSurface        = c.onSurface
-    val OnSurfaceVariant = c.onSurfaceVariant
-    val OutlineVariant   = c.outlineVariant
-    val Tertiary         = c.tertiary
-
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    // Step 1 = pick contact, Step 2 = enter amount
-    var selected       by remember { mutableStateOf<AddableContact?>(null) }
-    var searchQuery    by remember { mutableStateOf("") }
-    var amountText     by remember { mutableStateOf("") }
-    var note           by remember { mutableStateOf("") }
-    var isSending      by remember { mutableStateOf(false) }
-    var errorMsg       by remember { mutableStateOf<String?>(null) }
-    var successBalance by remember { mutableStateOf<Double?>(null) }
-
-    val filtered = remember(searchQuery, contacts) {
-        if (searchQuery.isBlank()) contacts
-        else contacts.filter {
-            it.name.contains(searchQuery, ignoreCase = true) ||
-            it.phone.contains(searchQuery, ignoreCase = true)
-        }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState       = sheetState,
-        containerColor   = SurfaceLowest,
-        shape            = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 40.dp)
-        ) {
-            // Handle bar
-            Box(
-                modifier = Modifier.width(40.dp).height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(OutlineVariant.copy(alpha = 0.4f))
-                    .align(Alignment.CenterHorizontally)
-            )
-            Spacer(Modifier.height(20.dp))
-
-            when {
-                // ── Success ───────────────────────────────────────────────
-                successBalance != null -> {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(Icons.Default.CheckCircle, null, tint = Primary, modifier = Modifier.size(60.dp))
-                        Text("Transfer sent!", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Primary)
-                        Text("New balance: €${String.format("%.2f", successBalance)}", fontSize = 14.sp, color = OnSurfaceVariant)
-                        Spacer(Modifier.height(8.dp))
-                        Box(
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                                .background(Brush.linearGradient(listOf(Primary, PrimaryContainer)))
-                                .clickable { onDismiss() }.padding(vertical = 14.dp),
-                            contentAlignment = Alignment.Center
-                        ) { Text("Done", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
-                    }
-                }
-
-                // ── Step 2: Amount + Note ─────────────────────────────────
-                selected != null -> {
-                    // Back button + recipient info
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier.size(36.dp).clip(CircleShape)
-                                .background(Primary.copy(alpha = 0.08f))
-                                .clickable { selected = null; amountText = ""; note = ""; errorMsg = null },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Primary, modifier = Modifier.size(18.dp))
-                        }
-                        Column {
-                            Text("Send to ${selected!!.name}", fontSize = 20.sp, fontWeight = FontWeight.Black, color = Primary)
-                            Text("Available: €${String.format("%.2f", availableBalance)}", fontSize = 13.sp, color = OnSurfaceVariant)
-                        }
-                    }
-                    Spacer(Modifier.height(24.dp))
-
-                    // Amount field
-                    Text("AMOUNT (€)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = OutlineVariant, letterSpacing = 0.8.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Box(
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                            .background(SurfaceLow).padding(horizontal = 16.dp, vertical = 16.dp)
-                    ) {
-                        BasicTextField(
-                            value = amountText,
-                            onValueChange = { amountText = it },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            textStyle = TextStyle(fontSize = 22.sp, color = OnSurface, fontWeight = FontWeight.Bold),
-                            cursorBrush = SolidColor(Primary),
-                            modifier = Modifier.fillMaxWidth(),
-                            decorationBox = { inner ->
-                                if (amountText.isEmpty()) Text("0.00", fontSize = 22.sp, color = OutlineVariant, fontWeight = FontWeight.Bold)
-                                inner()
-                            }
-                        )
-                    }
-                    Spacer(Modifier.height(16.dp))
-
-                    // Note field
-                    Text("NOTE (optional)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = OutlineVariant, letterSpacing = 0.8.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Box(
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                            .background(SurfaceLow).padding(horizontal = 16.dp, vertical = 14.dp)
-                    ) {
-                        BasicTextField(
-                            value = note,
-                            onValueChange = { note = it },
-                            singleLine = true,
-                            textStyle = TextStyle(fontSize = 15.sp, color = OnSurface),
-                            cursorBrush = SolidColor(Primary),
-                            modifier = Modifier.fillMaxWidth(),
-                            decorationBox = { inner ->
-                                if (note.isEmpty()) Text("Dinner, rent…", fontSize = 15.sp, color = OutlineVariant)
-                                inner()
-                            }
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-
-                    // Error
-                    errorMsg?.let { msg ->
-                        Box(
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                                .background(Tertiary.copy(alpha = 0.1f)).padding(14.dp)
-                        ) { Text(msg, color = Tertiary, fontSize = 13.sp) }
-                        Spacer(Modifier.height(8.dp))
-                    }
-
-                    // Send button
-                    val amount = amountText.toDoubleOrNull() ?: 0.0
-                    val canSend = amount > 0 && !isSending
-                    Box(
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                            .background(
-                                if (canSend) Brush.linearGradient(listOf(Primary, PrimaryContainer))
-                                else Brush.linearGradient(listOf(OutlineVariant.copy(0.3f), OutlineVariant.copy(0.3f)))
-                            )
-                            .clickable(enabled = canSend) {
-                                isSending = true; errorMsg = null
-                                onSendTo(selected!!.userId, amount, note.takeIf { it.isNotBlank() },
-                                    { newBal -> isSending = false; successBalance = newBal },
-                                    { msg -> isSending = false; errorMsg = msg }
-                                )
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isSending)
-                            CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
-                        else
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Default.North, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                Text("Send €${String.format("%.2f", amount)}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            }
-                    }
-                }
-
-                // ── Step 1: Contact list ──────────────────────────────────
-                else -> {
-                    Text("Send Money", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Primary)
-                    Text("Available: €${String.format("%.2f", availableBalance)}", fontSize = 13.sp, color = OnSurfaceVariant)
-                    Spacer(Modifier.height(16.dp))
-
-                    // Search bar
-                    Box(
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                            .background(SurfaceLow).padding(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Icon(Icons.Default.Search, null, tint = OutlineVariant, modifier = Modifier.size(18.dp))
-                            BasicTextField(
-                                value = searchQuery,
-                                onValueChange = { searchQuery = it },
-                                singleLine = true,
-                                textStyle = TextStyle(fontSize = 15.sp, color = OnSurface),
-                                cursorBrush = SolidColor(Primary),
-                                modifier = Modifier.fillMaxWidth(),
-                                decorationBox = { inner ->
-                                    if (searchQuery.isEmpty()) Text("Search name or phone…", fontSize = 15.sp, color = OutlineVariant)
-                                    inner()
-                                }
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
-
-                    when {
-                        isLoadingContacts -> {
-                            Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = Primary)
-                            }
-                        }
-                        contacts.isEmpty() -> {
-                            Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
-                                Text("No SplitPay contacts found.\nMake sure your contacts have the app.", fontSize = 14.sp, color = OnSurfaceVariant)
-                            }
-                        }
-                        filtered.isEmpty() -> {
-                            Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
-                                Text("No results for \"$searchQuery\"", fontSize = 14.sp, color = OnSurfaceVariant)
-                            }
-                        }
-                        else -> {
-                            Text("ON SPLITPAY", fontSize = 11.sp, fontWeight = FontWeight.Medium,
-                                color = OnSurfaceVariant.copy(alpha = 0.6f), letterSpacing = 1.5.sp)
-                            Spacer(Modifier.height(8.dp))
-                            LazyColumn(
-                                modifier = Modifier.heightIn(max = 400.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                items(filtered) { contact ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                                            .background(SurfaceLow)
-                                            .clickable { selected = contact }
-                                            .padding(16.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(
-                                            modifier = Modifier.size(44.dp).clip(CircleShape)
-                                                .background(Primary.copy(alpha = 0.1f)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(contact.name.firstOrNull()?.toString() ?: "?",
-                                                fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Primary)
-                                        }
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(contact.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
-                                            Text(contact.phone, fontSize = 12.sp, color = OnSurfaceVariant)
-                                        }
-                                        Icon(Icons.Default.North, null, tint = Primary.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
