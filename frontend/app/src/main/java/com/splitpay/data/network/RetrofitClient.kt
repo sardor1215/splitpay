@@ -26,6 +26,8 @@ object RetrofitClient {
         chain.proceed(request)
     }
 
+    private val refreshLock = java.util.concurrent.locks.ReentrantLock()
+
     // Auto-refresh on 401
     private val tokenAuthenticator = object : Authenticator {
         override fun authenticate(route: Route?, response: okhttp3.Response): Request? {
@@ -34,14 +36,29 @@ object RetrofitClient {
             if (response.request.url.encodedPath.startsWith("/auth/")) return null
 
             val tokenManager = SplitPayApp.instance.tokenManager
+
+            refreshLock.lock()
+            try {
+                // Si un autre thread a déjà refreshé pendant qu'on attendait, on réessaie avec le nouveau token
+                val currentToken = tokenManager.accessToken
+                val requestToken = response.request.header("Authorization")?.removePrefix("Bearer ")
+                if (currentToken != null && currentToken != requestToken) {
+                    return response.request.newBuilder()
+                        .header("Authorization", "Bearer $currentToken")
+                        .build()
+                }
+            } finally {
+                refreshLock.unlock()
+            }
+
             val refreshToken = tokenManager.refreshToken
             if (refreshToken == null) {
-                // Pas de refresh token — session définitivement expirée
                 tokenManager.clear()
                 AuthEvents.notifyExpired()
                 return null
             }
 
+            refreshLock.lock()
             // Synchronous refresh call
             val refreshResponse = try {
                 val refreshClient = OkHttpClient()
@@ -59,21 +76,25 @@ object RetrofitClient {
                 return null
             }
 
-            if (!refreshResponse.isSuccessful) {
-                tokenManager.clear()
-                AuthEvents.notifyExpired()   // redirect to login
-                return null
+            try {
+                if (!refreshResponse.isSuccessful) {
+                    tokenManager.clear()
+                    AuthEvents.notifyExpired()
+                    return null
+                }
+
+                val json = refreshResponse.body?.string() ?: return null
+                val gson = com.google.gson.Gson()
+                val auth = gson.fromJson(json, AuthResponse::class.java)
+
+                tokenManager.save(auth.accessToken, auth.refreshToken, auth.userId, auth.name, auth.email)
+
+                return response.request.newBuilder()
+                    .header("Authorization", "Bearer ${auth.accessToken}")
+                    .build()
+            } finally {
+                refreshLock.unlock()
             }
-
-            val json = refreshResponse.body?.string() ?: return null
-            val gson = com.google.gson.Gson()
-            val auth = gson.fromJson(json, AuthResponse::class.java)
-
-            tokenManager.save(auth.accessToken, auth.refreshToken, auth.userId, auth.name, auth.email)
-
-            return response.request.newBuilder()
-                .header("Authorization", "Bearer ${auth.accessToken}")
-                .build()
         }
     }
 
