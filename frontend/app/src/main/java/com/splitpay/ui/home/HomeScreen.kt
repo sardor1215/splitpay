@@ -85,6 +85,14 @@ fun HomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // Auto-refresh every 60 seconds — cancelled automatically when screen leaves composition
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(60_000)
+            homeViewModel.fetchGroups()
+        }
+    }
+
     val groups         by homeViewModel.groups.collectAsStateWithLifecycle()
     val accountBalance by homeViewModel.accountBalance.collectAsStateWithLifecycle()
     val pendingCount   by homeViewModel.pendingCount.collectAsStateWithLifecycle()

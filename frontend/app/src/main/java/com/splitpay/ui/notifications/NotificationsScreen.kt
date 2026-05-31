@@ -55,6 +55,14 @@ fun NotificationsScreen(
 
     val hasAny = invitations.isNotEmpty() || spaceInvitations.isNotEmpty()
 
+    // Auto-refresh every 30 seconds
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            viewModel.refresh()
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize().background(Surface)) {
 
         PullToRefreshBox(
