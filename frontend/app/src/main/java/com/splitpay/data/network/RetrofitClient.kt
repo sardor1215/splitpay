@@ -14,8 +14,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
 
-    //private const val BASE_URL = "http://10.0.2.2:3000/"   // émulateur Android
-    private const val BASE_URL = "http://192.168.0.111:3000/" // appareil physique (WiFi)
+    private const val BASE_URL = "https://splitpay.fnlsrv.website/"
 
     private val authInterceptor = Interceptor { chain ->
         val token = SplitPayApp.instance.tokenManager.accessToken
