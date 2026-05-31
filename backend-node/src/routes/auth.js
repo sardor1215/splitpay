@@ -33,7 +33,11 @@ router.post('/register', async (req, res) => {
 // POST /auth/login
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  const result = await query('SELECT * FROM users WHERE email = $1 AND is_deleted = false', [email]);
+  const identifier = email?.trim();
+  const result = await query(
+    'SELECT * FROM users WHERE (email = $1 OR phone = $1) AND is_deleted = false',
+    [identifier]
+  );
   const user = result.rows[0];
 
   if (!user || !user.password_hash || !(await bcrypt.compare(password, user.password_hash)))

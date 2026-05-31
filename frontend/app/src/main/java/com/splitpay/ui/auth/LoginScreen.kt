@@ -124,8 +124,9 @@ fun LoginScreen(
                         value = email,
                         onValueChange = { email = it },
                         label = "EMAIL OR PHONE",
-                        placeholder = "architect@splitpay.com",
-                        keyboardType = KeyboardType.Email
+                        placeholder = "email@example.com or +1234567890",
+                        keyboardType = if (email.startsWith("+") || email.firstOrNull()?.isDigit() == true)
+                            KeyboardType.Phone else KeyboardType.Email
                     )
 
                     Spacer(modifier = Modifier.height(28.dp))
