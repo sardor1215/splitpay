@@ -9,6 +9,7 @@ const pool = new Pool({
   max: 10,
   idleTimeoutMillis: 300_000,
   connectionTimeoutMillis: 30_000,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
 });
 
 pool.on('error', (err) => {
