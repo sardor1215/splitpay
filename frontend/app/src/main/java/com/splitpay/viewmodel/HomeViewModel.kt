@@ -163,7 +163,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resetLookup() { _lookupState.value = LookupState.Idle }
 
-    fun fetchGroups() {
+    private var lastFetchedAt = 0L
+    private val COOLDOWN_MS   = 30_000L
+
+    fun fetchGroups(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && _groups.value.isNotEmpty() && now - lastFetchedAt < COOLDOWN_MS) return
+        lastFetchedAt = now
         viewModelScope.launch {
             if (_groups.value.isEmpty()) _isLoading.value = true
             _error.value = null

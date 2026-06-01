@@ -207,7 +207,7 @@ fun HomeScreen(
         // ── Main content ──────────────────────────────────────────────────
         PullToRefreshBox(
             isRefreshing = isLoading,
-            onRefresh = { homeViewModel.fetchGroups() },
+            onRefresh = { homeViewModel.fetchGroups(force = true) },
             modifier = Modifier.fillMaxSize()
         ) {
         LazyColumn(

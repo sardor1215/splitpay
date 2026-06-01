@@ -71,7 +71,13 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
         "💼", "🌴", "🍻", "🎓", "💊", "🐾"
     )
 
-    fun loadGroup(groupId: String) {
+    private var lastFetchedAt = 0L
+    private val COOLDOWN_MS   = 30_000L
+
+    fun loadGroup(groupId: String, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastFetchedAt < COOLDOWN_MS) return
+        lastFetchedAt = now
         viewModelScope.launch {
             val userId = tokenManager.userId
 
@@ -260,5 +266,5 @@ class GroupDetailViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun refresh(groupId: String) = loadGroup(groupId)
+    fun refresh(groupId: String) = loadGroup(groupId, force = true)
 }
