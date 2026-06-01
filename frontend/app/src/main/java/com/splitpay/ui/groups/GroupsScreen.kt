@@ -34,6 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.data.model.Group
 import com.splitpay.ui.theme.LocalAppColors
+import com.splitpay.ui.theme.formatAmount
 import com.splitpay.viewmodel.HomeViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -332,7 +333,7 @@ private fun GroupCard(group: Group, onClick: () -> Unit) {
         else -> "SETTLED"
     }
     val balanceAmount = if (group.balance != 0.0)
-        "$${String.format("%.2f", Math.abs(group.balance))}"
+        "$${formatAmount(Math.abs(group.balance))}"
     else ""
 
     Box(

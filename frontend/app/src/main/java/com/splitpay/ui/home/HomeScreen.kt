@@ -47,6 +47,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.data.model.Group
 import com.splitpay.data.network.GroupDebtorResponse
 import com.splitpay.ui.theme.LocalAppColors
+import com.splitpay.ui.theme.formatAmount
 import com.splitpay.viewmodel.AddableContact
 import com.splitpay.viewmodel.HomeViewModel
 import com.splitpay.viewmodel.PayState
@@ -229,7 +230,7 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "$${String.format("%.2f", accountBalance)}",
+                    text = "${${formatAmount(accountBalance)}}",
                     fontSize = 52.sp,
                     fontWeight = FontWeight.Black,
                     color = Primary,
@@ -482,7 +483,7 @@ fun BalanceCard(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "$${String.format("%.2f", amount)}",
+                    text = "${${formatAmount(amount)}}",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = OnSurface
@@ -540,7 +541,7 @@ fun GroupItem(
         else -> "SETTLED"
     }
     val balanceAmount = when {
-        group.balance != 0.0 -> "$${String.format("%.2f", Math.abs(group.balance))}"
+        group.balance != 0.0 -> "$${formatAmount(Math.abs(group.balance))}"
         else -> ""
     }
 
@@ -784,7 +785,7 @@ private fun BalanceSheet(
                                     color = OnSurface
                                 )
                                 Text(
-                                    "$${String.format("%.2f", amount)}",
+                                    "${${formatAmount(amount)}}",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Black,
                                     color = OnSurface
@@ -878,7 +879,7 @@ private fun SendMoneySheet(
                 ) {
                     Icon(Icons.Default.CheckCircle, null, tint = Primary, modifier = Modifier.size(60.dp))
                     Text("Transfer sent!", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Primary)
-                    Text("New balance: €${String.format("%.2f", successBalance)}", fontSize = 14.sp, color = OnSurfaceVariant)
+                    Text("New balance: €${${formatAmount(successBalance)}}", fontSize = 14.sp, color = OnSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
                     Box(
                         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
@@ -905,7 +906,7 @@ private fun SendMoneySheet(
                     }
                     Column {
                         Text("Send to ${selected!!.name}", fontSize = 20.sp, fontWeight = FontWeight.Black, color = Primary)
-                        Text("Available: €${String.format("%.2f", availableBalance)}", fontSize = 13.sp, color = OnSurfaceVariant)
+                        Text("Available: €${${formatAmount(availableBalance)}}", fontSize = 13.sp, color = OnSurfaceVariant)
                     }
                 }
                 Spacer(Modifier.height(24.dp))
@@ -981,7 +982,7 @@ private fun SendMoneySheet(
                     else
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Default.North, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            Text("Send €${String.format("%.2f", amount)}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Send €${${formatAmount(amount)}}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                 }
             }
@@ -989,7 +990,7 @@ private fun SendMoneySheet(
             // ── Step 1: Contact list ──────────────────────────────────────
             else -> {
                 Text("Send Money", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Primary)
-                Text("Available: €${String.format("%.2f", availableBalance)}", fontSize = 13.sp, color = OnSurfaceVariant)
+                Text("Available: €${${formatAmount(availableBalance)}}", fontSize = 13.sp, color = OnSurfaceVariant)
                 Spacer(Modifier.height(16.dp))
 
                 Box(
@@ -1115,7 +1116,7 @@ private fun PayDialog(
             Spacer(Modifier.height(2.dp))
             // Always show the available balance
             Text(
-                "Your balance: €${String.format("%.2f", accountBalance)}",
+                "Your balance: €${${formatAmount(accountBalance)}}",
                 fontSize = 13.sp,
                 color = if (accountBalance > 0) OnSurfaceVariant else ErrorColor,
                 fontWeight = if (accountBalance <= 0) FontWeight.SemiBold else FontWeight.Normal
@@ -1165,7 +1166,7 @@ private fun PayDialog(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(debtor.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = OnSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                        Text("€${String.format("%.2f", debtor.amount)}", fontSize = 15.sp, fontWeight = FontWeight.Black, color = OnSurface)
+                                        Text("€${${formatAmount(debtor.amount)}}", fontSize = 15.sp, fontWeight = FontWeight.Black, color = OnSurface)
                                     }
                                     if (!isConfirming) {
                                         // Initial Pay button — always shown, state revealed on confirm
@@ -1207,7 +1208,7 @@ private fun PayDialog(
                                                         .clickable { onPay(debtor.userId, debtor.amount); confirmDebtor = null },
                                                     contentAlignment = Alignment.Center
                                                 ) {
-                                                    Text("Confirm €${String.format("%.2f", debtor.amount)}",
+                                                    Text("Confirm €${${formatAmount(debtor.amount)}}",
                                                         color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                                 }
                                             }
@@ -1221,8 +1222,8 @@ private fun PayDialog(
                                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                                     Text("Insufficient balance", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = WarnColor)
                                                     Text(
-                                                        "You have €${String.format("%.2f", accountBalance)} but owe €${String.format("%.2f", debtor.amount)}. " +
-                                                        "You're €${String.format("%.2f", debtor.amount - accountBalance)} short.",
+                                                        "You have €${${formatAmount(accountBalance)}} but owe €${${formatAmount(debtor.amount)}}. " +
+                                                        "You're €${${formatAmount(debtor.amount - accountBalance)}} short.",
                                                         fontSize = 12.sp, color = WarnColor.copy(alpha = 0.8f), lineHeight = 16.sp
                                                     )
                                                 }
@@ -1247,7 +1248,7 @@ private fun PayDialog(
                                                             .clickable { onPay(debtor.userId, payAmount); confirmDebtor = null },
                                                         contentAlignment = Alignment.Center
                                                     ) {
-                                                        Text("Pay €${String.format("%.2f", payAmount)} (partial)",
+                                                        Text("Pay €${${formatAmount(payAmount)}} (partial)",
                                                             color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                                     }
                                                 }

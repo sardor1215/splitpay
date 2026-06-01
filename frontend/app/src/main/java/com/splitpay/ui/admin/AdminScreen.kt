@@ -37,6 +37,7 @@ import com.splitpay.data.network.AdminUserResponse
 import com.splitpay.data.network.AmlAlertResponse
 import com.splitpay.data.network.GdprConfigUpdateRequest
 import com.splitpay.ui.theme.LocalAppColors
+import com.splitpay.ui.theme.formatAmount
 import com.splitpay.viewmodel.AdminViewModel
 
 private val Warning = Color(0xFFB45309)
@@ -226,7 +227,7 @@ private fun BalancesTab(users: List<AdminUserResponse>, viewModel: AdminViewMode
                 Column {
                     Text("Manage Balance", fontWeight = FontWeight.Bold, color = OnSurface, fontSize = 17.sp)
                     Text(target!!.name, fontSize = 13.sp, color = OnSurfaceVariant)
-                    Text("Current: $${String.format("%.2f", target!!.accountBalance)}",
+                    Text("Current: ${${formatAmount(target!!.accountBalance)}}",
                         fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                         color = if (target!!.accountBalance >= 0) Primary else Tertiary)
                 }
@@ -296,7 +297,7 @@ private fun BalancesTab(users: List<AdminUserResponse>, viewModel: AdminViewMode
                     ) {
                         Text("New balance", fontSize = 12.sp, color = OnSurfaceVariant)
                         Text(
-                            "$${String.format("%.2f", preview)}",
+                            "${${formatAmount(preview)}}",
                             fontSize = 14.sp, fontWeight = FontWeight.ExtraBold,
                             color = Primary
                         )
@@ -359,7 +360,7 @@ private fun BalancesTab(users: List<AdminUserResponse>, viewModel: AdminViewMode
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Total balance across all users", fontSize = 12.sp, color = OnSurfaceVariant)
-            Text("$${String.format("%.2f", totalBalance)}", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Primary)
+            Text("${${formatAmount(totalBalance)}}", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Primary)
         }
 
         Spacer(Modifier.height(8.dp))
@@ -398,7 +399,7 @@ private fun BalancesTab(users: List<AdminUserResponse>, viewModel: AdminViewMode
                     // Balance
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            "$${String.format("%.2f", user.accountBalance)}",
+                            "${${formatAmount(user.accountBalance)}}",
                             fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = balanceColor
                         )
                         // Recharge button
@@ -898,7 +899,7 @@ private fun UserRow(user: AdminUserResponse, viewModel: AdminViewModel) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Balance: $${String.format("%.2f", user.accountBalance)}",
+                "Balance: ${${formatAmount(user.accountBalance)}}",
                 fontSize = 12.sp,
                 color = if (user.accountBalance > 0) Secondary else OnSurfaceVariant,
                 fontWeight = FontWeight.SemiBold
@@ -938,6 +939,6 @@ private fun GroupRow(group: AdminGroupResponse) {
             Text(group.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Text("${group.memberCount} members · ${group.expenseCount} expenses", fontSize = 11.sp, color = OnSurfaceVariant)
         }
-        Text("$${String.format("%.2f", group.totalAmount)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Primary)
+        Text("${${formatAmount(group.totalAmount)}}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Primary)
     }
 }

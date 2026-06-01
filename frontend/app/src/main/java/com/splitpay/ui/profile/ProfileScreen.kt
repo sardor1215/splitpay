@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.splitpay.ui.theme.LocalAppColors
+import com.splitpay.ui.theme.formatAmount
 import com.splitpay.viewmodel.ProfileViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -275,7 +276,7 @@ fun ProfileScreen(
                     StatChip(
                         icon = Icons.Default.AccountBalanceWallet,
                         iconColor = Secondary,
-                        label = "$${String.format("%.2f", totalBalance)}"
+                        label = "${${formatAmount(totalBalance)}}"
                     )
                     StatChip(
                         icon = Icons.Default.Group,
@@ -496,7 +497,7 @@ fun ProfileScreen(
                         Column {
                             Text("Available balance", fontSize = 13.sp, color = OnSurfaceVariant)
                             Text(
-                                "€${String.format("%.2f", accountBalance)}",
+                                "€${${formatAmount(accountBalance)}}",
                                 fontSize = 32.sp,
                                 fontWeight = FontWeight.Black,
                                 color = if (accountBalance >= 0) Primary else Tertiary,
@@ -605,7 +606,7 @@ fun ProfileScreen(
                                             }
                                         }
                                         Text(
-                                            "$sign€${String.format("%.2f", payment.amount)}",
+                                            "$sign€${${formatAmount(payment.amount)}}",
                                             fontWeight = FontWeight.Black, fontSize = 16.sp, color = accentColor
                                         )
                                     }
