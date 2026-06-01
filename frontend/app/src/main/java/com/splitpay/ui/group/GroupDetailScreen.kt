@@ -442,8 +442,15 @@ fun GroupDetailScreen(
                             Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(Primary.copy(alpha = 0.1f)), contentAlignment = Alignment.Center) {
                                 Text(member.name.firstOrNull()?.toString() ?: "?", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Primary)
                             }
-                            Column {
-                                Text(member.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = member.name,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = OnSurface,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
                                 Text(
                                     text = member.role.replaceFirstChar { it.uppercase() },
                                     fontSize = 12.sp,
