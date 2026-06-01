@@ -54,13 +54,13 @@ router.post('/', async (req, res) => {
           settlementMode = 'PAY', dueDate, launcherId, participants } = req.body;
 
   if (!name?.trim())       return res.status(400).json({ message: 'Le nom de l\'espace est requis' });
-  if (!totalAmount || totalAmount <= 0) return res.status(400).json({ message: 'Le montant total doit être positif' });
-  if (!participants?.length) return res.status(400).json({ message: 'Au moins un participant requis' });
-  if (settlementMode === 'PLAN' && !dueDate) return res.status(400).json({ message: 'Date d\'échéance requise en mode PLAN' });
+  if (!totalAmount || totalAmount <= 0) return res.status(400).json({ message: 'Total amount must be positive' });
+  if (!participants?.length) return res.status(400).json({ message: 'At least one participant is required' });
+  if (settlementMode === 'PLAN' && !dueDate) return res.status(400).json({ message: 'Due date is required in PLAN mode' });
 
   // FR-047 : créateur doit être membre du groupe
   const isMember = (await query('SELECT id FROM group_members WHERE group_id=$1 AND user_id=$2', [groupId, req.userId])).rows.length > 0;
-  if (!isMember) return res.status(403).json({ message: 'Vous devez être membre du groupe pour créer un espace' });
+  if (!isMember) return res.status(403).json({ message: 'You must be a group member to create a space' });
 
   // FR-048 : vérifier que tous les participants sont membres actifs du groupe
   for (const p of participants) {
@@ -70,7 +70,7 @@ router.post('/', async (req, res) => {
 
   // AML pre-check sur le montant total (respecte les règles R1–R18)
   const amlBlock = await preCheck(req.userId, totalAmount, groupId);
-  if (amlBlock) return res.status(422).json({ message: `Espace bloqué par compliance AML: ${amlBlock}` });
+  if (amlBlock) return res.status(422).json({ message: `Space blocked by AML compliance: ${amlBlock}` });
 
   // Calcul des parts
   const count = participants.length;
@@ -105,14 +105,14 @@ router.post('/', async (req, res) => {
 
   // Notifier tous les participants — délai 48h (FR-053)
   const creatorResult = await query('SELECT name FROM users WHERE id=$1', [req.userId]);
-  const creatorName = creatorResult.rows[0]?.name || 'Quelqu\'un';
+  const creatorName = creatorResult.rows[0]?.name || 'Someone';
   for (const s of shares) {
-    notifyUser(s.userId, 'Invitation à un espace',
-      `${creatorName} vous invite à "${name}" — montant: ${s.share.toFixed(2)}€. Répondez dans 48h.`,
+    notifyUser(s.userId, 'Space invitation',
+      `${creatorName} invites you to "${name}" — amount: ${s.share.toFixed(2)}€. Please respond within 48h.`,
       { type: 'space_invitation', spaceId, groupId }).catch(() => {});
   }
 
-  // Planifier rappels H+24 et H+47 (stockés pour traitement par job)
+  // Planifier rappels H+24 et H+47 (stockés for traitement par job)
   await auditLog(spaceId, req.userId, 'reminders_scheduled', { h24: true, h47: true });
 
   const space = await getSpaceDetail(spaceId, req.userId);
@@ -134,7 +134,7 @@ router.get('/', async (req, res) => {
   res.json(result);
 });
 
-// ── GET /pending — DOIT être avant /:spaceId pour ne pas être capturé ──────────
+// ── GET /pending — DOIT être avant /:spaceId for ne pas être capturé ──────────
 router.get('/pending', async (req, res) => {
   const result = await query(
     `SELECT s.id AS space_id, s.group_id, s.name, s.total_amount, s.category,
@@ -178,7 +178,7 @@ router.get('/pending', async (req, res) => {
 // ── GET /groups/:groupId/spaces/:spaceId ──────────────────────────────────────
 router.get('/:spaceId', async (req, res) => {
   const detail = await getSpaceDetail(req.params.spaceId, req.userId);
-  if (!detail) return res.status(404).json({ message: 'Espace non trouvé' });
+  if (!detail) return res.status(404).json({ message: 'Space not found' });
   res.json(detail);
 });
 
@@ -186,14 +186,14 @@ router.get('/:spaceId', async (req, res) => {
 router.post('/:spaceId/accept', async (req, res) => {
   const { spaceId } = req.params;
   const space = await getSpace(spaceId);
-  if (!space) return res.status(404).json({ message: 'Espace non trouvé' });
-  if (space.status !== 'pending_acceptance') return res.status(409).json({ message: 'La phase d\'acceptation est terminée' });
+  if (!space) return res.status(404).json({ message: 'Space not found' });
+  if (space.status !== 'pending_acceptance') return res.status(409).json({ message: 'Acceptance phase is over' });
 
   const participant = (await query(
     'SELECT * FROM space_participants WHERE space_id=$1 AND user_id=$2', [spaceId, req.userId]
   )).rows[0];
-  if (!participant) return res.status(403).json({ message: 'Vous n\'êtes pas invité à cet espace' });
-  if (participant.acceptance_status !== 'pending') return res.status(409).json({ message: `Vous avez déjà répondu: ${participant.acceptance_status}` });
+  if (!participant) return res.status(403).json({ message: 'You are not invited to this space' });
+  if (participant.acceptance_status !== 'pending') return res.status(409).json({ message: `You have already responded: ${participant.acceptance_status}` });
 
   await query('UPDATE space_participants SET acceptance_status=$1, responded_at=NOW() WHERE space_id=$2 AND user_id=$3',
     ['accepted', spaceId, req.userId]);
@@ -202,15 +202,15 @@ router.post('/:spaceId/accept', async (req, res) => {
   // Vérifier unanimité
   await checkAcceptanceUnanimity(space, spaceId);
 
-  res.json({ message: 'Participation acceptée' });
+  res.json({ message: 'Participation accepted' });
 });
 
 // ── POST /:spaceId/decline — Refuser la participation ────────────────────────
 router.post('/:spaceId/decline', async (req, res) => {
   const { spaceId } = req.params;
   const space = await getSpace(spaceId);
-  if (!space) return res.status(404).json({ message: 'Espace non trouvé' });
-  if (space.status !== 'pending_acceptance') return res.status(409).json({ message: 'La phase d\'acceptation est terminée' });
+  if (!space) return res.status(404).json({ message: 'Space not found' });
+  if (space.status !== 'pending_acceptance') return res.status(409).json({ message: 'Acceptance phase is over' });
 
   await query('UPDATE space_participants SET acceptance_status=$1, responded_at=NOW() WHERE space_id=$2 AND user_id=$3',
     ['declined', spaceId, req.userId]);
@@ -219,22 +219,22 @@ router.post('/:spaceId/decline', async (req, res) => {
   // Annulation automatique si refus (FR-053)
   await cancelSpaceOnDecline(space, spaceId);
 
-  res.json({ message: 'Participation refusée' });
+  res.json({ message: 'Participation declined' });
 });
 
 // ── POST /:spaceId/force-launch — Forcer avec membres acceptants (FR-054) ─────
 router.post('/:spaceId/force-launch', async (req, res) => {
   const { spaceId } = req.params;
   const space = await getSpace(spaceId);
-  if (!space) return res.status(404).json({ message: 'Espace non trouvé' });
-  if (space.created_by !== req.userId) return res.status(403).json({ message: 'Seul le créateur peut forcer le lancement' });
-  if (space.status !== 'pending_acceptance') return res.status(409).json({ message: 'Impossible de forcer dans cet état' });
+  if (!space) return res.status(404).json({ message: 'Space not found' });
+  if (space.created_by !== req.userId) return res.status(403).json({ message: 'Only the creator can force launch' });
+  if (space.status !== 'pending_acceptance') return res.status(409).json({ message: 'Cannot force launch in this state' });
 
   const accepted = (await query(
     'SELECT * FROM space_participants WHERE space_id=$1 AND acceptance_status=$2', [spaceId, 'accepted']
   )).rows;
 
-  if (!accepted.length) return res.status(400).json({ message: 'Aucun participant n\'a accepté' });
+  if (!accepted.length) return res.status(400).json({ message: 'No participant has accepted' });
 
   // Recalcul des parts avec les acceptants uniquement (FR-054)
   const newShares = recalculateShares(parseFloat(space.total_amount), accepted.length, space.split_mode, accepted);
@@ -247,57 +247,57 @@ router.post('/:spaceId/force-launch', async (req, res) => {
   await query("UPDATE spaces SET status='active', force_launched=true, updated_at=NOW() WHERE id=$1", [spaceId]);
   await auditLog(spaceId, req.userId, 'force_launched', { acceptedCount: accepted.length, newTotal: space.total_amount });
 
-  res.json({ message: `Espace lancé avec ${accepted.length} membre(s). Montant redistribué.` });
+  res.json({ message: `Space launched with ${accepted.length} member(s). Amount redistributed.` });
 });
 
 // ── POST /:spaceId/settle — Déclencher le règlement (FR-050) ─────────────────
 router.post('/:spaceId/settle', async (req, res) => {
   const { groupId, spaceId } = req.params;
   const space = await getSpace(spaceId);
-  if (!space) return res.status(404).json({ message: 'Espace non trouvé' });
+  if (!space) return res.status(404).json({ message: 'Space not found' });
 
   // FR-050 : seul créateur ou lanceur désigné peut déclencher
   if (space.launcher_id !== req.userId && space.created_by !== req.userId)
-    return res.status(403).json({ message: 'Seul le créateur ou le membre lanceur peut déclencher le règlement' });
+    return res.status(403).json({ message: 'Only the creator or launcher can trigger settlement' });
 
   if (!['active'].includes(space.status))
-    return res.status(409).json({ message: `Impossible de régler un espace en état "${space.status}"` });
+    return res.status(409).json({ message: `Cannot settle a space in state "${space.status}"` });
 
   // AML check avant règlement
   const amlBlock = await preCheck(req.userId, space.total_amount, groupId, spaceId);
-  if (amlBlock) return res.status(422).json({ message: `Règlement bloqué par compliance AML: ${amlBlock}` });
+  if (amlBlock) return res.status(422).json({ message: `Settlement blocked by AML compliance: ${amlBlock}` });
 
   await initiateSettlement(space, spaceId, groupId, req.userId);
-  res.json({ message: 'Règlement initié — quorum de confirmation en cours' });
+  res.json({ message: 'Settlement initiated — confirmation quorum in progress' });
 });
 
 // ── POST /:spaceId/early-settle — Demander règlement anticipé PLAN (FR-051) ──
 router.post('/:spaceId/early-settle', async (req, res) => {
   const { spaceId } = req.params;
   const space = await getSpace(spaceId);
-  if (!space) return res.status(404).json({ message: 'Espace non trouvé' });
-  if (space.settlement_mode !== 'PLAN') return res.status(400).json({ message: 'Le règlement anticipé est uniquement disponible en mode PLAN' });
+  if (!space) return res.status(404).json({ message: 'Space not found' });
+  if (space.settlement_mode !== 'PLAN') return res.status(400).json({ message: 'Early settlement is only available in PLAN mode' });
   if (space.launcher_id !== req.userId && space.created_by !== req.userId)
-    return res.status(403).json({ message: 'Seul le lanceur peut demander un règlement anticipé' });
+    return res.status(403).json({ message: 'Only the launcher can request early settlement' });
   if (space.status !== 'active') return res.status(409).json({ message: 'L\'espace n\'est pas actif' });
 
   await query("UPDATE spaces SET early_settle_requested=true, early_settle_requested_at=NOW(), updated_at=NOW() WHERE id=$1", [spaceId]);
   await auditLog(spaceId, req.userId, 'early_settle_requested', {});
 
-  // Notifier TOUS les membres pour accord unanime (FR-051)
+  // Notifier TOUS les membres for accord unanime (FR-051)
   const participants = (await query(
     'SELECT user_id FROM space_participants WHERE space_id=$1 AND acceptance_status=$2', [spaceId, 'accepted']
   )).rows;
 
   for (const p of participants) {
     if (p.user_id !== req.userId) {
-      notifyUser(p.user_id, 'Règlement anticipé demandé',
-        'Le lanceur souhaite régler cet espace avant la date prévue. Acceptez-vous ?',
+      notifyUser(p.user_id, 'Early settlement requested',
+        'The launcher wants to settle this space before the due date. Do you agree?',
         { type: 'early_settle_request', spaceId, action: 'required' }).catch(() => {});
     }
   }
 
-  res.json({ message: 'Demande de règlement anticipé envoyée à tous les membres' });
+  res.json({ message: 'Early settlement request sent to all members' });
 });
 
 // ── POST /:spaceId/early-settle/respond — Répondre au règlement anticipé ──────
@@ -305,10 +305,10 @@ router.post('/:spaceId/early-settle/respond', async (req, res) => {
   const { groupId, spaceId } = req.params;
   const { vote } = req.body; // 'accepted' | 'declined'
   if (!['accepted', 'declined'].includes(vote))
-    return res.status(400).json({ message: 'vote doit être "accepted" ou "declined"' });
+    return res.status(400).json({ message: 'vote must be "accepted" or "declined"' });
 
   const space = await getSpace(spaceId);
-  if (!space?.early_settle_requested) return res.status(400).json({ message: 'Aucune demande de règlement anticipé en cours' });
+  if (!space?.early_settle_requested) return res.status(400).json({ message: 'No early settlement request in progress' });
 
   // Upsert vote
   await query(
@@ -323,10 +323,10 @@ router.post('/:spaceId/early-settle/respond', async (req, res) => {
     // FR-052 : au moins un refus → blocage du règlement anticipé
     await query("UPDATE spaces SET early_settle_requested=false, updated_at=NOW() WHERE id=$1", [spaceId]);
     const launcher = (await query('SELECT launcher_id FROM spaces WHERE id=$1', [spaceId])).rows[0];
-    notifyUser(launcher.launcher_id, 'Règlement anticipé refusé',
-      'Un membre a refusé le règlement anticipé. L\'espace reste en mode PLAN jusqu\'à la date d\'échéance.',
+    notifyUser(launcher.launcher_id, 'Early settlement declined',
+      'A member declined early settlement. The space remains in PLAN mode until the due date.',
       { type: 'early_settle_refused', spaceId }).catch(() => {});
-    return res.json({ message: 'Règlement anticipé refusé. L\'espace reste en mode PLAN.' });
+    return res.json({ message: 'Early settlement declined. Space remains in PLAN mode.' });
   }
 
   // Vérifier unanimité
@@ -342,10 +342,10 @@ router.post('/:spaceId/early-settle/respond', async (req, res) => {
     await query("UPDATE spaces SET early_settle_requested=false, updated_at=NOW() WHERE id=$1", [spaceId]);
     await auditLog(spaceId, req.userId, 'early_settle_approved_unanimous', {});
     await initiateSettlement(space, spaceId, groupId, space.launcher_id);
-    return res.json({ message: 'Accord unanime — règlement anticipé déclenché' });
+    return res.json({ message: 'Unanimous agreement — early settlement triggered' });
   }
 
-  res.json({ message: `Vote enregistré (${totalVotedYes}/${totalAccepted})` });
+  res.json({ message: `Vote recorded (${totalVotedYes}/${totalAccepted})` });
 });
 
 // ── POST /:spaceId/quorum/confirm — Confirmer le règlement (quorum) ───────────
@@ -366,13 +366,13 @@ router.post('/:spaceId/assist', async (req, res) => {
   const { memberId } = req.body; // ID du membre à assister
 
   const space = await getSpace(spaceId);
-  if (!space) return res.status(404).json({ message: 'Espace non trouvé' });
+  if (!space) return res.status(404).json({ message: 'Space not found' });
 
   const memberParticipant = (await query(
     'SELECT * FROM space_participants WHERE space_id=$1 AND user_id=$2', [spaceId, memberId]
   )).rows[0];
-  if (!memberParticipant) return res.status(404).json({ message: 'Membre non trouvé dans cet espace' });
-  if (memberParticipant.assisted_by) return res.status(409).json({ message: 'Ce membre est déjà assisté' });
+  if (!memberParticipant) return res.status(404).json({ message: 'Member not found in this space' });
+  if (memberParticipant.assisted_by) return res.status(409).json({ message: 'This member is already assisted' });
 
   // FR-057 : enregistrer la dette
   await query('UPDATE space_participants SET assisted_by=$1 WHERE space_id=$2 AND user_id=$3',
@@ -395,7 +395,7 @@ router.post('/:spaceId/assist', async (req, res) => {
     }
   }
 
-  res.json({ message: `Assistance enregistrée. ${assistantName} couvre ${parseFloat(memberParticipant.share).toFixed(2)}€ pour ${memberName}` });
+  res.json({ message: `Assistance recorded. ${assistantName} covers ${parseFloat(memberParticipant.share).toFixed(2)}€ for ${memberName}` });
 });
 
 // ── POST /:spaceId/transfer-launcher — Transférer le rôle lanceur ─────────────
@@ -403,10 +403,10 @@ router.post('/:spaceId/transfer-launcher', async (req, res) => {
   const { spaceId } = req.params;
   const { toUserId } = req.body;
   const space = await getSpace(spaceId);
-  if (!space) return res.status(404).json({ message: 'Espace non trouvé' });
-  if (space.created_by !== req.userId) return res.status(403).json({ message: 'Seul le créateur peut transférer le rôle lanceur' });
+  if (!space) return res.status(404).json({ message: 'Space not found' });
+  if (space.created_by !== req.userId) return res.status(403).json({ message: 'Only the creator can transfer the launcher role' });
   if (['settling', 'settled', 'cancelled'].includes(space.status))
-    return res.status(409).json({ message: 'Impossible de transférer après le déclenchement' });
+    return res.status(409).json({ message: 'Cannot transfer after launch' });
 
   const isMember = (await query(
     'SELECT id FROM space_participants WHERE space_id=$1 AND user_id=$2', [spaceId, toUserId]
@@ -417,11 +417,11 @@ router.post('/:spaceId/transfer-launcher', async (req, res) => {
   await auditLog(spaceId, req.userId, 'launcher_transferred', { toUserId });
 
   const newLauncherName = (await query('SELECT name FROM users WHERE id=$1', [toUserId])).rows[0]?.name || '';
-  notifyUser(toUserId, 'Rôle lanceur attribué',
-    `Vous êtes maintenant le lanceur de l'espace "${space.name}"`,
+  notifyUser(toUserId, 'Launcher role assigned',
+    `You are now the launcher of space "${space.name}"`,
     { type: 'launcher_assigned', spaceId }).catch(() => {});
 
-  res.json({ message: `Rôle lanceur transféré à ${newLauncherName}` });
+  res.json({ message: `Launcher role transferred to ${newLauncherName}` });
 });
 
 // ── PATCH /:spaceId — Modifier un espace et notifier les membres ─────────────
@@ -666,8 +666,8 @@ async function checkAcceptanceUnanimity(space, spaceId) {
     const participants = (await query('SELECT user_id FROM space_participants WHERE space_id=$1', [spaceId])).rows;
     const spaceName = space.name;
     for (const p of participants) {
-      notifyUser(p.user_id, 'Espace confirmé !',
-        `Tous les membres ont accepté "${spaceName}". L'espace est maintenant actif.`,
+      notifyUser(p.user_id, 'Space confirmed!',
+        `All members accepted "${spaceName}". The space is now active.`,
         { type: 'space_confirmed', spaceId }).catch(() => {});
     }
   }
@@ -724,11 +724,11 @@ async function designateQuorum(spaceId, participants, excludeUserId, cycle) {
   if (candidates.length === 0) {
     // FR-061 : plus de membres disponibles → règlement suspendu
     await query("UPDATE spaces SET status='suspended', updated_at=NOW() WHERE id=$1", [spaceId]);
-    await auditLog(spaceId, null, 'quorum_impossible', { cycle });
+    await auditLog(spaceId, null, 'quorum_unreachable', { cycle });
     const space = await getSpace(spaceId);
-    notifyUser(space.launcher_id, 'Règlement suspendu',
-      `Impossible d'atteindre le quorum pour "${space.name}". Vous pouvez relancer.`,
-      { type: 'quorum_impossible', spaceId }).catch(() => {});
+    notifyUser(space.launcher_id, 'Settlement suspended',
+      `Impossible d'atteindre le quorum for "${space.name}". You can restart.`,
+      { type: 'quorum_unreachable', spaceId }).catch(() => {});
     return;
   }
 
@@ -745,7 +745,7 @@ async function designateQuorum(spaceId, participants, excludeUserId, cycle) {
     );
     const space = await getSpace(spaceId);
     notifyUser(uid, 'Confirmation requise',
-      `Votre confirmation est requise pour régler "${space.name}". Délai : 5 minutes.`,
+      `Your confirmation is required to settle "${space.name}". Time limit: 5 minutes.`,
       { type: 'quorum_confirmation_required', spaceId, action: 'required' }).catch(() => {});
   }
 
@@ -756,7 +756,7 @@ async function designateQuorum(spaceId, participants, excludeUserId, cycle) {
 async function respondToQuorum(spaceId, groupId, userId, response, res) {
   const space = await getSpace(spaceId);
   if (!space || space.status !== 'settling')
-    return res.status(409).json({ message: 'Aucun règlement en cours' });
+    return res.status(409).json({ message: 'No settlement in progress' });
 
   const cycle = await getCurrentSettlementCycle(spaceId);
   const confirmation = (await query(
@@ -764,12 +764,12 @@ async function respondToQuorum(spaceId, groupId, userId, response, res) {
     [spaceId, userId, cycle, 'pending']
   )).rows[0];
 
-  if (!confirmation) return res.status(403).json({ message: 'Vous n\'êtes pas dans le quorum actuel' });
+  if (!confirmation) return res.status(403).json({ message: 'You are not in the current quorum' });
 
   // Vérifier expiration
   if (new Date() > new Date(confirmation.expires_at)) {
     await replaceQuorumMember(spaceId, userId, groupId, cycle);
-    return res.status(410).json({ message: 'Délai expiré — un autre membre vous remplace dans le quorum' });
+    return res.status(410).json({ message: 'Time expired — another member replaces you in the quorum' });
   }
 
   await query('UPDATE space_quorum_confirmations SET status=$1, responded_at=NOW() WHERE id=$2',
@@ -779,7 +779,7 @@ async function respondToQuorum(spaceId, groupId, userId, response, res) {
   if (response === 'rejected') {
     // FR-059 : remplacement du confirmateur refusant
     await replaceQuorumMember(spaceId, userId, groupId, cycle);
-    return res.json({ message: 'Rejet enregistré — un autre membre a été désigné' });
+    return res.json({ message: 'Rejection recorded — another member has been designated' });
   }
 
   // Vérifier si quorum atteint
@@ -810,7 +810,7 @@ async function respondToQuorum(spaceId, groupId, userId, response, res) {
     return res.json({ message: 'Quorum reached — expense settled!' });
   }
 
-  res.json({ message: `Confirmation enregistrée (${confirmed}/${needed})` });
+  res.json({ message: `Confirmation recorded (${confirmed}/${needed})` });
 }
 
 // FR-059 : Remplacer un membre défaillant du quorum ────────────────────────────
