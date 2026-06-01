@@ -1163,8 +1163,8 @@ private fun PayDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column {
-                                        Text(debtor.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = OnSurface)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(debtor.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = OnSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                         Text("€${String.format("%.2f", debtor.amount)}", fontSize = 15.sp, fontWeight = FontWeight.Black, color = OnSurface)
                                     }
                                     if (!isConfirming) {

@@ -392,8 +392,8 @@ private fun BalancesTab(users: List<AdminUserResponse>, viewModel: AdminViewMode
                     }
                     // Name + email
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(user.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
-                        Text(user.email, fontSize = 11.sp, color = OnSurfaceVariant, maxLines = 1)
+                        Text(user.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Text(user.email, fontSize = 11.sp, color = OnSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
                     // Balance
                     Column(horizontalAlignment = Alignment.End) {
@@ -861,7 +861,7 @@ private fun UserRow(user: AdminUserResponse, viewModel: AdminViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(user.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
+                    Text(user.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (user.isAdmin) {
                         Box(Modifier.clip(RoundedCornerShape(4.dp)).background(Primary)
                             .padding(horizontal = 5.dp, vertical = 1.dp)) {
@@ -935,7 +935,7 @@ private fun GroupRow(group: AdminGroupResponse) {
             contentAlignment = Alignment.Center
         ) { Text(group.emoji, fontSize = 20.sp) }
         Column(modifier = Modifier.weight(1f)) {
-            Text(group.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
+            Text(group.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Text("${group.memberCount} members · ${group.expenseCount} expenses", fontSize = 11.sp, color = OnSurfaceVariant)
         }
         Text("$${String.format("%.2f", group.totalAmount)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Primary)

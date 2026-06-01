@@ -402,8 +402,8 @@ fun ProfileScreen(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(inv.emoji, fontSize = 28.sp)
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(inv.title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = OnSurface)
-                                Text(inv.subtitle, fontSize = 12.sp, color = OnSurfaceVariant)
+                                Text(inv.title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = OnSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                Text(inv.subtitle, fontSize = 12.sp, color = OnSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Box(
