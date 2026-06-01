@@ -1053,8 +1053,8 @@ private fun SendMoneySheet(
                                             fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Primary)
                                     }
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(contact.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
-                                        Text(contact.phone, fontSize = 12.sp, color = OnSurfaceVariant)
+                                        Text(contact.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                        Text(contact.phone, fontSize = 12.sp, color = OnSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                     }
                                     Icon(Icons.Default.North, null, tint = Primary.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
                                 }

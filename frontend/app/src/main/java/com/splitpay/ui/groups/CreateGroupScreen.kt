@@ -446,9 +446,9 @@ private fun AppContactRow(contact: AppContact, onToggle: () -> Unit) {
                 contentAlignment = Alignment.Center) {
                 Text(contact.name.firstOrNull()?.toString() ?: "?", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Primary)
             }
-            Column {
-                Text(contact.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
-                Text(contact.phone, fontSize = 12.sp, color = OnSurfaceVariant)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(contact.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(contact.phone, fontSize = 12.sp, color = OnSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
         Box(modifier = Modifier.size(26.dp).clip(CircleShape)
@@ -477,9 +477,9 @@ private fun InviteContactRow(contact: DeviceContact, onInvite: () -> Unit) {
                 contentAlignment = Alignment.Center) {
                 Text(contact.name.firstOrNull()?.toString() ?: "?", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = OnSurfaceVariant)
             }
-            Column {
-                Text(contact.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
-                Text(contact.phone, fontSize = 12.sp, color = OnSurfaceVariant)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(contact.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(contact.phone, fontSize = 12.sp, color = OnSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
         Box(modifier = Modifier.clip(RoundedCornerShape(50))
